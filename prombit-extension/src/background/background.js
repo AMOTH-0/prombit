@@ -5,7 +5,7 @@
 async function handleImprovePrompt(rawPrompt) {
   if (!rawPrompt || rawPrompt.trim().length < 3) throw new Error('PROMPT_TOO_SHORT');
 
-  const response = await fetch('https://YOUR-VERCEL-URL.vercel.app/api/improve', {
+  const response = await fetch('https://prombit-backend.vercel.app/api/improve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ prompt: rawPrompt })
