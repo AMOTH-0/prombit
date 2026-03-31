@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "PromptCraft",
+  "name": "Prombit",
   "version": "1.0.0",
   "description": "Automatically improves your AI prompts for better results.",
   "permissions": [
@@ -15,9 +15,7 @@
     "https://claude.ai/*",
     "https://www.perplexity.ai/*",
     "https://copilot.microsoft.com/*",
-    "https://api.anthropic.com/*",
-    "https://api.openai.com/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://YOUR-VERCEL-URL.vercel.app/*"
   ],
   "background": {
     "service_worker": "src/background/background.js",

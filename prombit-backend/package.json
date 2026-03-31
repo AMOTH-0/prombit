@@ -1,0 +1,9 @@
+{
+  "name": "prombit-backend",
+  "version": "1.0.0",
+  "description": "Vercel serverless backend for Prombit Chrome Extension",
+  "main": "api/improve.js",
+  "dependencies": {
+    "openai": "^4.28.0"
+  }
+}
