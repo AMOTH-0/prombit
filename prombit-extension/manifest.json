@@ -15,7 +15,7 @@
     "https://claude.ai/*",
     "https://www.perplexity.ai/*",
     "https://copilot.microsoft.com/*",
-    "https://prombit-backend.vercel.app/*"
+    "https://prombit.vercel.app/*"
   ],
   "background": {
     "service_worker": "src/background/background.js",
