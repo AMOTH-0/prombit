@@ -273,13 +273,25 @@
   ];
 
 
-  // ─── Site lookup ──────────────────────────────────────────────────────────
+  // ─── Registry Map — O(1) lookup ───────────────────────────────────────────
+
+  // Strip ✦ from all labels once at module load — render path never needs to
+  AI_SITE_REGISTRY.forEach(e => { e.label = e.label.replace('✦ ', ''); });
+
+  // Map keyed by domain for O(1) exact lookup instead of O(n) array scan
+  const REGISTRY_MAP = new Map(AI_SITE_REGISTRY.map(e => [e.domain, e]));
 
   function getSiteConfig() {
     const hostname = window.location.hostname.replace(/^www\./, '');
-    return AI_SITE_REGISTRY.find(
-      site => hostname === site.domain || hostname.endsWith('.' + site.domain)
-    ) || null;
+    // Exact match — O(1)
+    if (REGISTRY_MAP.has(hostname)) return REGISTRY_MAP.get(hostname);
+    // Subdomain suffix match (e.g. app.suno.ai → suno.ai)
+    const parts = hostname.split('.');
+    for (let i = 1; i < parts.length - 1; i++) {
+      const suffix = parts.slice(i).join('.');
+      if (REGISTRY_MAP.has(suffix)) return REGISTRY_MAP.get(suffix);
+    }
+    return null;
   }
 
   // ─── State ────────────────────────────────────────────────────────────────
@@ -291,32 +303,51 @@
   let isImproving  = false;
   let lastUrl      = location.href;
 
+  // ── Performance caches (never mutate core logic) ──────────────────────────
+  let _cachedInput    = null;   // last resolved input element
+  let _cachedInputUrl = null;   // URL at time of cache
+  let _rafPending     = false;  // RAF throttle flag for scroll/resize
+
+  // Native value setters — cached once; getOwnPropertyDescriptor is expensive
+  const _textareaSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+  const _inputSetter    = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,    'value').set;
+
   // ─── Smart input finder ───────────────────────────────────────────────────
 
   function findBestInput() {
-    // Priority-ordered candidate list
-    const candidates = [
-      // 1. Explicit textbox roles (most reliable)
-      ...document.querySelectorAll('[role="textbox"]'),
-      // 2. ContentEditable divs (ChatGPT, Claude, Gemini style)
-      ...document.querySelectorAll('div[contenteditable="true"], div[contenteditable=""]'),
-      // 3. Textareas (image/video/writing tools)
-      ...document.querySelectorAll('textarea'),
-      // 4. Plain text inputs (Suno, ElevenLabs, etc.)
-      ...document.querySelectorAll('input[type="text"], input:not([type])'),
-    ];
+    // Return cached result if URL is unchanged and element is still in the DOM
+    if (_cachedInput && _cachedInputUrl === location.href && _cachedInput.isConnected) {
+      return _cachedInput;
+    }
+
+    // One combined selector is faster than four separate querySelectorAll calls
+    const all = document.querySelectorAll(
+      '[role="textbox"], div[contenteditable="true"], div[contenteditable=""], textarea, input[type="text"], input:not([type])'
+    );
 
     // Filter to visible, plausibly prompt-sized elements
-    const visible = candidates.filter(el => {
+    const visible = [];
+    for (const el of all) {
       const rect = el.getBoundingClientRect();
-      // Must be on screen, wide enough, and not a tiny token (height >= 24)
-      return rect.width > 180 && rect.height >= 24 && rect.top < window.innerHeight && rect.bottom > 0;
-    });
+      if (rect.width > 180 && rect.height >= 24 && rect.top < window.innerHeight && rect.bottom > 0) {
+        visible.push(el);
+      }
+    }
 
     if (!visible.length) return null;
 
     // Score each candidate — pick the best one
-    return visible.sort((a, b) => inputScore(b) - inputScore(a))[0];
+    const best = visible.sort((a, b) => inputScore(b) - inputScore(a))[0];
+
+    // Cache against current URL; invalidated on navigation
+    _cachedInput    = best;
+    _cachedInputUrl = location.href;
+    return best;
+  }
+
+  function invalidateInputCache() {
+    _cachedInput    = null;
+    _cachedInputUrl = null;
   }
 
   function inputScore(el) {
@@ -376,10 +407,8 @@
       document.execCommand('selectAll', false, null);
       document.execCommand('insertText', false, text);
     } else {
-      const setter = Object.getOwnPropertyDescriptor(
-        el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
-        'value'
-      ).set;
+      // Use pre-cached native setters — avoids getOwnPropertyDescriptor per call
+      const setter = el.tagName === 'TEXTAREA' ? _textareaSetter : _inputSetter;
       setter.call(el, text);
       el.dispatchEvent(new Event('input',  { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -392,8 +421,7 @@
     const btn = document.createElement('button');
     btn.id        = 'promptcraft-btn';
     btn.className = 'promptcraft-btn';
-    // Strip the ✦ character dynamically
-    btn.innerHTML = `<span>${label.replace('✦ ', '')}</span>`;
+    btn.innerHTML = `<span>${label}</span>`; // ✦ already stripped at module init
     btn.title = 'Improve this prompt with Prombit (Ctrl+Shift+P)';
     btn.addEventListener('click', triggerImprove);
     return btn;
@@ -442,6 +470,9 @@
 
   function showButton(inputEl) {
     if (!pcButton || !inputEl) return;
+    // Guard: skip if already visible for this exact element
+    // Prevents double-fire from overlapping focusin + direct 'focus' listeners
+    if (pcButton.style.display !== 'none' && currentInput === inputEl) return;
     positionButton(inputEl);
     watchInputResize(inputEl);
     // Force animation restart every time
@@ -472,12 +503,10 @@
 
   // ─── Overlay helpers ──────────────────────────────────────────────────────
 
+  // Single-pass escapeHtml: one regex, one string allocation instead of four
+  const _ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '\n': '<br>' };
   function escapeHtml(text) {
-    return text
-      .replace(/&/g,  '&amp;')
-      .replace(/</g,  '&lt;')
-      .replace(/>/g,  '&gt;')
-      .replace(/\n/g, '<br>');
+    return text.replace(/[&<>\n]/g, c => _ESC_MAP[c]);
   }
 
   function removeOverlay() {
@@ -631,14 +660,14 @@
 
   function setButtonLoading(loading) {
     if (!pcButton) return;
+    const span = pcButton.querySelector('span'); // cache the DOM query
     if (loading) {
       pcButton.classList.add('pc-loading-btn');
-      pcButton.querySelector('span').textContent = 'Improving…';
+      span.textContent = 'Improving…';
       pcButton.disabled = true;
     } else {
       pcButton.classList.remove('pc-loading-btn');
-      // Strip ✦ dynamically
-      pcButton.querySelector('span').textContent = (siteConfig?.label || 'Improve Prompt').replace('✦ ', '');
+      span.textContent = siteConfig?.label || 'Improve Prompt'; // ✦ stripped at init
       pcButton.disabled = false;
     }
   }
@@ -736,41 +765,54 @@
       }, 200);
     });
 
-    // ── Reposition on scroll/resize so button tracks the input ─────────
-    window.addEventListener('scroll', () => {
-      if (pcButton && pcButton.style.display !== 'none' && currentInput) {
-        positionButton(currentInput);
-      }
-    }, { passive: true });
+    // ── RAF-throttled scroll/resize — max one reposition per animation frame ─
+    function onScrollOrResize() {
+      if (_rafPending || !pcButton || pcButton.style.display === 'none' || !currentInput) return;
+      _rafPending = true;
+      requestAnimationFrame(() => {
+        _rafPending = false;
+        if (pcButton && pcButton.style.display !== 'none' && currentInput) {
+          positionButton(currentInput);
+        }
+      });
+    }
+    window.addEventListener('scroll', onScrollOrResize, { passive: true });
+    window.addEventListener('resize', onScrollOrResize, { passive: true });
 
-    window.addEventListener('resize', () => {
-      if (pcButton && pcButton.style.display !== 'none' && currentInput) {
-        positionButton(currentInput);
-      }
-    }, { passive: true });
-
-    // ── Check auto-focus now + after short delays ───────────────────────
+    // ── Check auto-focus now; cancel later retries once input is found ───
     checkAutoFocus();
-    setTimeout(checkAutoFocus, 500);
-    setTimeout(checkAutoFocus, 1500);
-    setTimeout(() => attachDirectListeners(findBestInput()), 600);
+    const _t1 = setTimeout(() => { if (!currentInput) checkAutoFocus(); }, 500);
+    const _t2 = setTimeout(() => { if (!currentInput) checkAutoFocus(); }, 1500);
+    setTimeout(() => {
+      const inp = findBestInput();
+      if (inp) {
+        attachDirectListeners(inp);
+        clearTimeout(_t1); // input found — cancel redundant retries
+        clearTimeout(_t2);
+      }
+    }, 600);
 
     // ── SPA: poll for URL changes ───────────────────────────────────────
     setInterval(() => {
       if (location.href !== lastUrl) {
         lastUrl = location.href;
+        invalidateInputCache(); // stale element ref — clear before re-detecting
         removeButton();
         setTimeout(() => {
           runDetection();
           setTimeout(checkAutoFocus, 200);
-          setTimeout(() => attachDirectListeners(findBestInput()), 300);
+          setTimeout(() => {
+            const inp = findBestInput();
+            if (inp) attachDirectListeners(inp);
+          }, 300);
         }, 800);
       }
     }, 500);
 
     // ── Keep button injected if SPA removes it from the DOM ────────────
+    // pcButton.isConnected avoids a live DOM query on every mutation
     new MutationObserver(() => {
-      if (siteConfig && !document.getElementById('promptcraft-btn')) {
+      if (siteConfig && (!pcButton || !pcButton.isConnected)) {
         injectButton();
         setTimeout(checkAutoFocus, 100);
       }

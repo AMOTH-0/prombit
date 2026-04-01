@@ -21,18 +21,25 @@ function getClient() {
  * @param {string} systemPrompt - The system instructions for this category.
  */
 async function improvePrompt(rawPrompt, systemPrompt) {
-  const deepseek = getClient();
+  const deepseek   = getClient();
+  const controller = new AbortController();
+  const timeout    = setTimeout(() => controller.abort(), 30_000); // 30s hard limit
 
-  const completion = await deepseek.chat.completions.create({
-    model: 'deepseek-chat',
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user',   content: rawPrompt }
-    ],
-    max_tokens: 1024
-  });
+  try {
+    const completion = await deepseek.chat.completions.create({
+      model: 'deepseek-chat',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user',   content: rawPrompt }
+      ],
+      max_tokens:  1024,
+      temperature: 0.3, // lower = faster + more deterministic for prompt rewriting
+    }, { signal: controller.signal });
 
-  return completion.choices[0].message.content;
+    return completion.choices[0].message.content;
+  } finally {
+    clearTimeout(timeout); // always clear so the timer doesn't fire after success
+  }
 }
 
 module.exports = { improvePrompt };
