@@ -156,7 +156,7 @@ module.exports = async (req, res) => {
 
   // 2. Strict Origin Validation
   const origin = req.headers.origin || '';
-  if (!origin.startsWith('chrome-extension://') && !origin.includes('localhost') && origin !== 'null') {
+  if (!origin.startsWith('chrome-extension://') && !origin.includes('localhost')) {
     return res.status(403).json({ success: false, error: 'FORBIDDEN_ORIGIN' });
   }
 
@@ -179,7 +179,8 @@ module.exports = async (req, res) => {
     }
 
     // 4. Rate Limiting
-    const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || 'unknown';
+    const forwarded = req.headers['x-forwarded-for'];
+    const ip = forwarded ? forwarded.split(',')[0].trim() : (req.headers['x-real-ip'] || 'unknown');
     if (!(await checkRedisRateLimit(ip))) {
       return res.status(429).json({ success: false, error: 'RATE_LIMITED' });
     }
@@ -197,7 +198,7 @@ module.exports = async (req, res) => {
     }
 
     // Heuristics: Block jailbreak or proxy attempts
-    const blocklist = /ignore all prior|ignore all previous|disregard.*instructions|forget everything|system prompt|you are a helpful assistant|bypass|jailbreak/i;
+    const blocklist = /ignore all prior|ignore all previous|disregard.{0,50}instructions|forget everything|system prompt|you are a helpful assistant|bypass|jailbreak/i;
     if (blocklist.test(trimmedPrompt)) {
       console.warn(`[SECURITY] Blocked prompt injection from IP: ${ip}`);
       return res.status(400).json({ success: false, error: 'PROMPT_POLICY_VIOLATION' });
