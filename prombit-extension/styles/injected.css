@@ -1,44 +1,56 @@
-/* PromptCraft Injected Styles */
-/* These styles are scoped to PromptCraft elements only */
+/* Prombit Injected Styles */
+/* These styles are scoped to Prombit elements only */
+
+/* ─── Improve Prompt Button (permanent, fixed, non-overlapping) ─────── */
 
 #promptcraft-btn.promptcraft-btn {
-  position: absolute;
-  z-index: 999998;
-  display: flex;
+  position: fixed;
+  /* top & left controlled by JS positionButton() */
+  z-index: 2147483647;    /* max possible — always above site UI */
+  display: none;
+  opacity: 0;
   align-items: center;
   gap: 6px;
-  padding: 7px 12px;
-  background: #1a1a2e;
+  padding: 6px 12px;
+  height: 34px;
+  background: rgba(26, 26, 46, 0.92);
+  backdrop-filter: blur(8px);
   color: #e8e8f0;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   font-size: 12px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
   font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.25);
-  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(99, 102, 241, 0.2);
+  transition: box-shadow 0.18s ease, background 0.18s ease;
   white-space: nowrap;
   pointer-events: all;
+  user-select: none;
+  transform-origin: bottom right;
+  will-change: transform, opacity;
 }
 
+
 #promptcraft-btn.promptcraft-btn:hover {
-  background: #2d2d4e;
-  transform: translateY(-1px);
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 8px 28px rgba(99, 102, 241, 0.55), 0 2px 6px rgba(0,0,0,0.18);
 }
 
 #promptcraft-btn.promptcraft-btn:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.35);
 }
 
 #promptcraft-btn.pc-loading-btn {
-  opacity: 0.7;
+  opacity: 0.72;
   cursor: not-allowed;
+  transform: none !important;
 }
 
 #promptcraft-btn svg {
   flex-shrink: 0;
-  opacity: 0.8;
+  opacity: 0.95;
 }
 
 /* ─── Overlay ──────────────────────────────────────────────────────── */
@@ -344,4 +356,42 @@
 
 @media (prefers-color-scheme: dark) {
   .pc-error p { color: #aaa; }
+}
+
+/* ─── Button entrance / exit animations ──────────────────────────────────── */
+
+@keyframes prombit-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.7) translateY(4px);
+  }
+  60% {
+    transform: scale(1.08) translateY(-1px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes prombit-fade-out {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.85) translateY(3px);
+  }
+}
+
+/* Hover / active still work when button is visible */
+#promptcraft-btn.promptcraft-btn:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 8px 28px rgba(99, 102, 241, 0.55), 0 2px 6px rgba(0,0,0,0.18);
+}
+
+#promptcraft-btn.promptcraft-btn:active {
+  transform: scale(0.96);
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.35);
 }

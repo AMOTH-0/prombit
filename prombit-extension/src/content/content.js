@@ -1,45 +1,368 @@
-// PromptCraft Content Script
-// Injected into ChatGPT, Gemini, Claude, Perplexity, etc.
-// Detects the active prompt input and adds the PromptCraft button
+// Prombit Content Script — Registry-Based AI Site Detection
+// Runs on <all_urls>. Button only appears on sites in AI_SITE_REGISTRY.
 
 (function () {
   'use strict';
 
-  // Site-specific selectors for the prompt textarea
-  const SITE_SELECTORS = {
-    'chatgpt.com': '#prompt-textarea, div[contenteditable="true"][data-id]',
-    'chat.openai.com': '#prompt-textarea, div[contenteditable="true"][data-id]',
-    'gemini.google.com': 'div[contenteditable="true"].ql-editor, rich-textarea div[contenteditable="true"]',
-    'claude.ai': 'div[contenteditable="true"].ProseMirror',
-    'perplexity.ai': 'textarea[placeholder], div[contenteditable="true"]',
-    'copilot.microsoft.com': 'div[contenteditable="true"], textarea'
-  };
+  // ─── Full AI Site Registry ─────────────────────────────────────────────────
+  // Each entry: { domain, category, label }
+  // getSiteConfig() matches hostname exactly or as a subdomain suffix.
 
+  const AI_SITE_REGISTRY = [
+
+    // ── TEXT_CHAT — General AI Chatbots & LLM Platforms ────────────────────
+    { domain: 'chatgpt.com',              category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'chat.openai.com',          category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'claude.ai',                category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'gemini.google.com',        category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'copilot.microsoft.com',    category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'perplexity.ai',            category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'grok.com',                 category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'x.ai',                     category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'meta.ai',                  category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'pi.ai',                    category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'poe.com',                  category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'chat.deepseek.com',        category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'deepseek.com',             category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'chat.mistral.ai',          category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'mistral.ai',               category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'kimi.ai',                  category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'chat.kimi.ai',             category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'moonshot.cn',              category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'huggingface.co',           category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'character.ai',             category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'beta.character.ai',        category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'jan.ai',                   category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'chat.qwen.ai',             category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'qwenlm.ai',                category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'tongyi.aliyun.com',        category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'yiyan.baidu.com',          category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'xinghuo.xfyun.cn',         category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'tiangong.cn',              category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'coze.com',                 category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'coze.cn',                  category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'doubao.com',               category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'talkie-ai.com',            category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'you.com',                  category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'venice.ai',                category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'chat.lmsys.org',           category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'nat.dev',                  category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'together.ai',              category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'groq.com',                 category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'cohere.com',               category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+
+    // ── SEARCH — AI Search & Research Tools ────────────────────────────────
+    { domain: 'phind.com',                category: 'SEARCH',       label: 'Improve Search Prompt' },
+    { domain: 'elicit.org',               category: 'SEARCH',       label: 'Improve Research Prompt' },
+    { domain: 'consensus.app',            category: 'SEARCH',       label: 'Improve Research Prompt' },
+    { domain: 'scite.ai',                 category: 'SEARCH',       label: 'Improve Research Prompt' },
+    { domain: 'researchrabbit.ai',        category: 'SEARCH',       label: 'Improve Research Prompt' },
+    { domain: 'notebooklm.google.com',    category: 'SEARCH',       label: 'Improve Research Prompt' },
+    { domain: 'kagi.com',                 category: 'SEARCH',       label: 'Improve Search Prompt' },
+    { domain: 'exa.ai',                   category: 'SEARCH',       label: 'Improve Search Prompt' },
+    { domain: 'andi.co',                  category: 'SEARCH',       label: 'Improve Search Prompt' },
+    { domain: 'globe.engineer',           category: 'SEARCH',       label: 'Improve Search Prompt' },
+    { domain: 'iask.ai',                  category: 'SEARCH',       label: 'Improve Search Prompt' },
+
+    // ── CODE — AI Coding IDEs & Developer Tools ─────────────────────────────
+    { domain: 'github.com',               category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'cursor.com',               category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'cursor.sh',                category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'codeium.com',              category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'windsurf.com',             category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'windsurf.ai',              category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'trae.ai',                  category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'trae.com',                 category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'replit.com',               category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'tabnine.com',              category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'devin.ai',                 category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'sweep.dev',                category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'mutable.ai',               category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'continue.dev',             category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'bolt.new',                 category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'lovable.dev',              category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'v0.dev',                   category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'val.town',                 category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'codex.openai.com',         category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'sourcegraph.com',          category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'cody.dev',                 category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'pieces.app',               category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'softgen.ai',               category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'factory.ai',               category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'augmentcode.com',          category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'zed.dev',                  category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'idx.google.com',           category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'blackbox.ai',              category: 'CODE',         label: 'Improve Code Prompt' },
+    { domain: 'gitpod.io',                category: 'CODE',         label: 'Improve Code Prompt' },
+
+    // ── IMAGE — AI Image Generation ──────────────────────────────────────────
+    { domain: 'midjourney.com',           category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'leonardo.ai',              category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'app.leonardo.ai',          category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'playgroundai.com',         category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'playground.ai',            category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'firefly.adobe.com',        category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'ideogram.ai',              category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'bluewillow.ai',            category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'dreamstudio.ai',           category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'krea.ai',                  category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'stability.ai',             category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'getimg.ai',                category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'nightcafe.studio',         category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'tensor.art',               category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'civitai.com',              category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'openart.ai',               category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'seaart.ai',                category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'pixai.art',                category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'flux1.ai',                 category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'fal.ai',                   category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'imagine.art',              category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'artbreeder.com',           category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'clipdrop.co',              category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'dezgo.com',                category: 'IMAGE',        label: 'Improve Image Prompt' },
+
+    // ── VIDEO — AI Video Generation ──────────────────────────────────────────
+    { domain: 'runwayml.com',             category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'app.runwayml.com',         category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'pika.art',                 category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'synthesia.io',             category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'heygen.com',               category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'app.heygen.com',           category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'colossyan.com',            category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'lumalabs.ai',              category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'luma.ai',                  category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'klingai.com',              category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'kling.ai',                 category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'hailuoai.video',           category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'hailuoai.com',             category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'kaiber.ai',                category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'genmo.ai',                 category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'invideo.io',               category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'pictory.ai',               category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'veed.io',                  category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'fliki.ai',                 category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'steve.ai',                 category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'haiper.ai',                category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'veo.google.com',           category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'sora.com',                 category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'wan.video',                category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'pixverse.ai',              category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'seedance.ai',              category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'vidu.ai',                  category: 'VIDEO',        label: 'Improve Video Prompt' },
+
+    // ── VOICE — AI Voice, TTS & Audio ───────────────────────────────────────
+    { domain: 'elevenlabs.io',            category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'play.ht',                  category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'resemble.ai',              category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'murf.ai',                  category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'descript.com',             category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'speechify.com',            category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'wellsaidlabs.com',         category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'voicemod.net',             category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'lovo.ai',                  category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'listnr.tech',              category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'rimeai.com',               category: 'VOICE',        label: 'Improve Voice Prompt' },
+
+    // ── MUSIC — AI Music Generation ──────────────────────────────────────────
+    { domain: 'suno.com',                 category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'suno.ai',                  category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'app.suno.ai',              category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'udio.com',                 category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'soundraw.io',              category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'aiva.ai',                  category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'mubert.com',               category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'beatoven.ai',              category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'loudly.com',               category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'boomy.com',                category: 'MUSIC',        label: 'Improve Music Prompt' },
+
+    // ── WRITING — AI Writing & Content Tools ────────────────────────────────
+    { domain: 'jasper.ai',                category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'copy.ai',                  category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'writesonic.com',           category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'sudowrite.com',            category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'grammarly.com',            category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'notion.so',               category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'rytr.me',                  category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'paperpal.com',             category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'hyperwriteai.com',         category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'paragraphai.com',          category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'wordtune.com',             category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'quillbot.com',             category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'prowritingaid.com',        category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'inkforall.com',            category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'anyword.com',              category: 'WRITING',      label: 'Improve Writing Prompt' },
+    { domain: 'cohesive.so',              category: 'WRITING',      label: 'Improve Writing Prompt' },
+
+    // ── DESIGN — AI Design, UI & Presentation Tools ─────────────────────────
+    { domain: 'figma.com',                category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'framer.com',               category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'canva.com',                category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'webflow.com',              category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'locofy.ai',                category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'uizard.io',                category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'builder.io',               category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'tome.app',                 category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'gamma.app',                category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'stitch.withgoogle.com',    category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'relume.io',                category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'durable.co',               category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'mixo.io',                  category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'beautiful.ai',             category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'presentations.ai',         category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'simplified.com',           category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'galileo.ai',               category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'magician.design',          category: 'DESIGN',       label: 'Improve Design Prompt' },
+
+    // ── PRODUCTIVITY — AI Productivity & Office Tools ───────────────────────
+    { domain: 'clickup.com',              category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'airtable.com',             category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'coda.io',                  category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'mem.ai',                   category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'taskade.com',              category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'slite.com',                category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'motion.app',               category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'turbo.ai',                 category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'turbolearn.ai',            category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'otter.ai',                 category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'fireflies.ai',             category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'bearly.ai',                category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'adept.ai',                 category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'reclaim.ai',               category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+    { domain: 'krisp.ai',                 category: 'PRODUCTIVITY', label: 'Improve Prompt' },
+
+    // ── AGENT — AI Agents & Automation ──────────────────────────────────────
+    { domain: 'zapier.com',               category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'lindy.ai',                 category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'manus.ai',                 category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'agentgpt.reworkd.ai',      category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'superagi.com',             category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'crewai.com',               category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'flowise.ai',               category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'flowiseai.com',            category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'n8n.io',                   category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'make.com',                 category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'relevanceai.com',          category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'activepieces.com',         category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'gumloop.com',              category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'bardeen.ai',               category: 'AGENT',        label: 'Improve Agent Prompt' },
+    { domain: 'dust.tt',                  category: 'AGENT',        label: 'Improve Agent Prompt' },
+
+    // ── DATA — AI Data, Analytics & BI ──────────────────────────────────────
+    { domain: 'thoughtspot.com',          category: 'DATA',         label: 'Improve Data Prompt' },
+    { domain: 'hex.tech',                 category: 'DATA',         label: 'Improve Data Prompt' },
+    { domain: 'datarobot.com',            category: 'DATA',         label: 'Improve Data Prompt' },
+    { domain: 'obviously.ai',             category: 'DATA',         label: 'Improve Data Prompt' },
+    { domain: 'monkeylearn.com',          category: 'DATA',         label: 'Improve Data Prompt' },
+    { domain: 'tellius.com',              category: 'DATA',         label: 'Improve Data Prompt' },
+    { domain: 'akkio.com',                category: 'DATA',         label: 'Improve Data Prompt' },
+    { domain: 'julius.ai',                category: 'DATA',         label: 'Improve Data Prompt' },
+    { domain: 'rows.com',                 category: 'DATA',         label: 'Improve Data Prompt' },
+
+    // ── INFRA — Model APIs & Playgrounds ────────────────────────────────────
+    { domain: 'platform.openai.com',      category: 'INFRA',        label: 'Improve Prompt' },
+    { domain: 'console.anthropic.com',    category: 'INFRA',        label: 'Improve Prompt' },
+    { domain: 'aistudio.google.com',      category: 'INFRA',        label: 'Improve Prompt' },
+    { domain: 'replicate.com',            category: 'INFRA',        label: 'Improve Prompt' },
+    { domain: 'fireworks.ai',             category: 'INFRA',        label: 'Improve Prompt' },
+    { domain: 'modal.com',                category: 'INFRA',        label: 'Improve Prompt' },
+    { domain: 'anyscale.com',             category: 'INFRA',        label: 'Improve Prompt' },
+    { domain: 'openrouter.ai',            category: 'INFRA',        label: 'Improve Prompt' },
+    { domain: 'deepinfra.com',            category: 'INFRA',        label: 'Improve Prompt' },
+    { domain: 'lepton.ai',                category: 'INFRA',        label: 'Improve Prompt' },
+
+  ];
+
+
+  // ─── Site lookup ──────────────────────────────────────────────────────────
+
+  function getSiteConfig() {
+    const hostname = window.location.hostname.replace(/^www\./, '');
+    return AI_SITE_REGISTRY.find(
+      site => hostname === site.domain || hostname.endsWith('.' + site.domain)
+    ) || null;
+  }
+
+  // ─── State ────────────────────────────────────────────────────────────────
+
+  let siteConfig   = null;   // { domain, category, label } | null
   let currentInput = null;
-  let pcButton = null;
-  let pcOverlay = null;
-  let isImproving = false;
+  let pcButton     = null;
+  let pcOverlay    = null;
+  let isImproving  = false;
+  let lastUrl      = location.href;
 
-  // ─── Find the active input on this site ───────────────────────────────────
+  // ─── Smart input finder ───────────────────────────────────────────────────
 
-  function getSelector() {
-    const host = window.location.hostname.replace('www.', '');
-    for (const [site, sel] of Object.entries(SITE_SELECTORS)) {
-      if (host.includes(site)) return sel;
-    }
-    return 'textarea, div[contenteditable="true"]';
-  }
+  function findBestInput() {
+    // Priority-ordered candidate list
+    const candidates = [
+      // 1. Explicit textbox roles (most reliable)
+      ...document.querySelectorAll('[role="textbox"]'),
+      // 2. ContentEditable divs (ChatGPT, Claude, Gemini style)
+      ...document.querySelectorAll('div[contenteditable="true"], div[contenteditable=""]'),
+      // 3. Textareas (image/video/writing tools)
+      ...document.querySelectorAll('textarea'),
+      // 4. Plain text inputs (Suno, ElevenLabs, etc.)
+      ...document.querySelectorAll('input[type="text"], input:not([type])'),
+    ];
 
-  function findActiveInput() {
-    const selector = getSelector();
-    const elements = document.querySelectorAll(selector);
-    // Prefer the one that's visible and has reasonable size
-    for (const el of elements) {
+    // Filter to visible, plausibly prompt-sized elements
+    const visible = candidates.filter(el => {
       const rect = el.getBoundingClientRect();
-      if (rect.width > 100 && rect.height > 20) return el;
-    }
-    return elements[0] || null;
+      // Must be on screen, wide enough, and not a tiny token (height >= 24)
+      return rect.width > 180 && rect.height >= 24 && rect.top < window.innerHeight && rect.bottom > 0;
+    });
+
+    if (!visible.length) return null;
+
+    // Score each candidate — pick the best one
+    return visible.sort((a, b) => inputScore(b) - inputScore(a))[0];
   }
+
+  function inputScore(el) {
+    let s = 0;
+    const rect = el.getBoundingClientRect();
+
+    // Bigger = better
+    s += Math.min(rect.width, 900) / 10;
+    s += Math.min(rect.height, 400) / 5;
+
+    // Centered on page
+    const cx = rect.left + rect.width / 2;
+    if (Math.abs(cx - window.innerWidth / 2) < window.innerWidth * 0.3) s += 20;
+
+    // Prompt-like placeholder / aria-label
+    const hint = (
+      el.getAttribute('placeholder') ||
+      el.getAttribute('aria-label') ||
+      el.getAttribute('aria-placeholder') || ''
+    ).toLowerCase();
+    if (/prompt|message|describe|generate|ask|tell|write|song|music|style|create|imagine|idea|compose|chat/i.test(hint)) s += 30;
+
+    // Prefer contenteditable and textarea over plain input
+    if (el.isContentEditable) s += 15;
+    if (el.tagName === 'TEXTAREA') s += 10;
+
+    // Nearby generate/send button
+    const parent = el.closest('form') || el.parentElement?.parentElement;
+    if (parent) {
+      const btns = parent.querySelectorAll('button, [role="button"]');
+      for (const btn of btns) {
+        if (/^(generate|create|run|send|ask|go|imagine|compose|make|build|render|submit)/i.test(btn.innerText?.trim())) {
+          s += 25;
+          break;
+        }
+      }
+    }
+
+    // Penalise password / search types
+    const t = (el.getAttribute('type') || '').toLowerCase();
+    if (['password', 'email', 'search', 'tel', 'url', 'number'].includes(t)) s = -999;
+
+    return s;
+  }
+
+  // ─── Input read/write helpers ─────────────────────────────────────────────
 
   function getInputText(el) {
     if (!el) return '';
@@ -53,63 +376,164 @@
       document.execCommand('selectAll', false, null);
       document.execCommand('insertText', false, text);
     } else {
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-      nativeInputValueSetter.call(el, text);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
+      const setter = Object.getOwnPropertyDescriptor(
+        el.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+        'value'
+      ).set;
+      setter.call(el, text);
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }
   }
 
-  // ─── Button ────────────────────────────────────────────────────────────────
+  // ─── Button ───────────────────────────────────────────────────────────────
 
-  function createButton() {
+  function createButton(label) {
     const btn = document.createElement('button');
-    btn.id = 'promptcraft-btn';
+    btn.id        = 'promptcraft-btn';
     btn.className = 'promptcraft-btn';
-    btn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-        <path d="M2 17l10 5 10-5"/>
-        <path d="M2 12l10 5 10-5"/>
-      </svg>
-      <span>Improve Prompt</span>
-    `;
-    btn.title = 'Improve this prompt with PromptCraft (Ctrl+Shift+P)';
+    // Strip the ✦ character dynamically
+    btn.innerHTML = `<span>${label.replace('✦ ', '')}</span>`;
+    btn.title = 'Improve this prompt with Prombit (Ctrl+Shift+P)';
     btn.addEventListener('click', triggerImprove);
     return btn;
   }
 
+  function injectButton() {
+    if (document.getElementById('promptcraft-btn') || !siteConfig) return;
+    pcButton = createButton(siteConfig.label);
+    // Start fully hidden — only show on input focus
+    pcButton.style.display = 'none';
+    pcButton.style.opacity = '0';
+    document.body.appendChild(pcButton);
+  }
+
+  function removeButton() {
+    document.getElementById('promptcraft-btn')?.remove();
+    pcButton = null;
+  }
+
+  // ─── Button positioning ─────────────────────────────────────────────────────
+
   function positionButton(inputEl) {
     if (!pcButton || !inputEl) return;
     const rect = inputEl.getBoundingClientRect();
-    const scrollTop = window.scrollY || document.documentElement.scrollTop;
-    const scrollLeft = window.scrollX || document.documentElement.scrollLeft;
 
-    pcButton.style.top = `${rect.bottom + scrollTop - 36}px`;
-    pcButton.style.left = `${rect.right + scrollLeft - 160}px`;
-    pcButton.style.display = 'flex';
+    // Below the input, left-aligned — never overlaps text or send button
+    const top  = rect.bottom + 6;
+    const left = rect.left;  // left edge of input
+
+    // Clamp so it never goes off-screen
+    const clampedLeft = Math.max(8, left);
+    const clampedTop  = Math.min(top, window.innerHeight - 50);
+
+    pcButton.style.position = 'fixed';
+    pcButton.style.top      = `${clampedTop}px`;
+    pcButton.style.left     = `${clampedLeft}px`;
+    pcButton.style.bottom   = 'auto';
+    pcButton.style.right    = 'auto';
+    pcButton.style.zIndex   = '2147483647';
   }
 
-  // ─── Overlay (shows original vs improved) ──────────────────────────────────
+
+  // ─── Show / hide with animation ───────────────────────────────────────────
+
+  let _resizeObserver = null;
+
+  function showButton(inputEl) {
+    if (!pcButton || !inputEl) return;
+    positionButton(inputEl);
+    watchInputResize(inputEl);
+    // Force animation restart every time
+    pcButton.style.animation = 'none';
+    void pcButton.offsetHeight; // trigger reflow
+    pcButton.style.display   = 'flex';
+    pcButton.style.animation = 'prombit-pop-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards';
+  }
+
+  function hideButton() {
+    if (!pcButton) return;
+    pcButton.style.animation = 'prombit-fade-out 0.15s ease forwards';
+    setTimeout(() => {
+      if (pcButton) pcButton.style.display = 'none';
+    }, 150);
+  }
+
+  function watchInputResize(inputEl) {
+    if (!inputEl || !window.ResizeObserver) return;
+    if (_resizeObserver) { _resizeObserver.disconnect(); }
+    _resizeObserver = new ResizeObserver(() => {
+      if (pcButton && pcButton.style.display !== 'none') {
+        positionButton(inputEl);
+      }
+    });
+    _resizeObserver.observe(inputEl);
+  }
+
+  // ─── Overlay helpers ──────────────────────────────────────────────────────
+
+  function escapeHtml(text) {
+    return text
+      .replace(/&/g,  '&amp;')
+      .replace(/</g,  '&lt;')
+      .replace(/>/g,  '&gt;')
+      .replace(/\n/g, '<br>');
+  }
+
+  function removeOverlay() {
+    if (pcOverlay) { pcOverlay.remove(); pcOverlay = null; }
+  }
+
+  function buildOverlayShell() {
+    const overlay = document.createElement('div');
+    overlay.id        = 'promptcraft-overlay';
+    overlay.className = 'promptcraft-overlay';
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) { removeOverlay(); isImproving = false; resetButton(); }
+    });
+    return overlay;
+  }
+
+  const LOGO_SVG = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+      <path d="M2 17l10 5 10-5"/>
+      <path d="M2 12l10 5 10-5"/>
+    </svg>`;
+
+  function headerHtml() {
+    return `
+      <div class="pc-header">
+        <div class="pc-logo">${LOGO_SVG}<span>Prombit</span></div>
+        <button class="pc-close" id="pc-close-btn">✕</button>
+      </div>`;
+  }
+
+  function showLoadingOverlay(original) {
+    removeOverlay();
+    const overlay = buildOverlayShell();
+    overlay.innerHTML = `
+      <div class="pc-overlay-inner">
+        ${headerHtml()}
+        <div class="pc-loading">
+          <div class="pc-spinner"></div>
+          <p>Improving your prompt…</p>
+          <div class="pc-original-preview">${escapeHtml(original.slice(0, 120))}${original.length > 120 ? '…' : ''}</div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#pc-close-btn').addEventListener('click', () => {
+      removeOverlay(); isImproving = false; resetButton();
+    });
+    pcOverlay = overlay;
+  }
 
   function createOverlay(original, improved) {
     removeOverlay();
-    const overlay = document.createElement('div');
-    overlay.id = 'promptcraft-overlay';
-    overlay.className = 'promptcraft-overlay';
+    const overlay = buildOverlayShell();
     overlay.innerHTML = `
       <div class="pc-overlay-inner">
-        <div class="pc-header">
-          <div class="pc-logo">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
-            </svg>
-            <span>PromptCraft</span>
-          </div>
-          <button class="pc-close" id="pc-close-btn">✕</button>
-        </div>
+        ${headerHtml()}
         <div class="pc-columns">
           <div class="pc-col">
             <div class="pc-col-label">Original</div>
@@ -123,135 +547,49 @@
         </div>
         <div class="pc-actions">
           <button class="pc-btn-secondary" id="pc-discard-btn">Keep original</button>
-          <button class="pc-btn-primary" id="pc-apply-btn">Use improved prompt ↗</button>
+          <button class="pc-btn-primary"   id="pc-apply-btn">Use improved prompt ↗</button>
         </div>
-      </div>
-    `;
-
+      </div>`;
     document.body.appendChild(overlay);
-
     overlay.querySelector('#pc-close-btn').addEventListener('click', removeOverlay);
     overlay.querySelector('#pc-discard-btn').addEventListener('click', removeOverlay);
     overlay.querySelector('#pc-apply-btn').addEventListener('click', () => {
-      applyImprovedPrompt(improved);
-      removeOverlay();
-    });
-
-    // Close on backdrop click
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) removeOverlay();
-    });
-
-    pcOverlay = overlay;
-  }
-
-  function removeOverlay() {
-    if (pcOverlay) {
-      pcOverlay.remove();
-      pcOverlay = null;
-    }
-  }
-
-  function escapeHtml(text) {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\n/g, '<br>');
-  }
-
-  // ─── Loading state ─────────────────────────────────────────────────────────
-
-  function showLoadingOverlay(original) {
-    removeOverlay();
-    const overlay = document.createElement('div');
-    overlay.id = 'promptcraft-overlay';
-    overlay.className = 'promptcraft-overlay';
-    overlay.innerHTML = `
-      <div class="pc-overlay-inner">
-        <div class="pc-header">
-          <div class="pc-logo">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
-            </svg>
-            <span>PromptCraft</span>
-          </div>
-          <button class="pc-close" id="pc-close-btn">✕</button>
-        </div>
-        <div class="pc-loading">
-          <div class="pc-spinner"></div>
-          <p>Improving your prompt…</p>
-          <div class="pc-original-preview">${escapeHtml(original.slice(0, 120))}${original.length > 120 ? '…' : ''}</div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-    overlay.querySelector('#pc-close-btn').addEventListener('click', () => {
-      removeOverlay();
-      isImproving = false;
-      resetButton();
-    });
-    overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
-        removeOverlay();
-        isImproving = false;
-        resetButton();
-      }
+      applyImprovedPrompt(improved); removeOverlay();
     });
     pcOverlay = overlay;
   }
 
   function showErrorOverlay(message) {
     removeOverlay();
-    const overlay = document.createElement('div');
-    overlay.id = 'promptcraft-overlay';
-    overlay.className = 'promptcraft-overlay';
-
-    const errorMessages = {
-      'NO_API_KEY': 'No API key found. Click the PromptCraft icon in your toolbar and add your API key (Anthropic, OpenAI, or Google).',
-      'UNKNOWN_API_KEY': 'Key format not recognised. Supported: Anthropic (sk-ant-…), OpenAI (sk-…), Google (AIza…).',
-      'INVALID_API_KEY': 'Your API key was rejected. Double-check it is correct and has the right permissions.',
-      'RATE_LIMITED': 'You\'ve hit the API rate limit. Please wait a moment and try again.',
-      'PROMPT_TOO_SHORT': 'Your prompt is too short to improve. Write a bit more first.'
+    const msgs = {
+      NO_API_KEY:       'No API key found. Click the Prombit icon in your toolbar to configure it.',
+      UNKNOWN_API_KEY:  'Key format not recognised. Supported: Anthropic, OpenAI, Google.',
+      INVALID_API_KEY:  'Your API key was rejected. Double-check it is correct.',
+      RATE_LIMITED:     "You've hit the API rate limit. Please wait a moment and try again.",
+      PROMPT_TOO_SHORT: 'Your prompt is too short to improve. Write a bit more first.',
     };
-
-    const displayMessage = errorMessages[message] || message;
-
+    const overlay = buildOverlayShell();
     overlay.innerHTML = `
       <div class="pc-overlay-inner">
-        <div class="pc-header">
-          <div class="pc-logo">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
-              <path d="M2 17l10 5 10-5"/>
-              <path d="M2 12l10 5 10-5"/>
-            </svg>
-            <span>PromptCraft</span>
-          </div>
-          <button class="pc-close" id="pc-close-btn">✕</button>
-        </div>
+        ${headerHtml()}
         <div class="pc-error">
           <div class="pc-error-icon">⚠️</div>
-          <p>${displayMessage}</p>
+          <p>${msgs[message] || message}</p>
           <button class="pc-btn-secondary" id="pc-err-close">Dismiss</button>
         </div>
-      </div>
-    `;
+      </div>`;
     document.body.appendChild(overlay);
     overlay.querySelector('#pc-close-btn').addEventListener('click', removeOverlay);
     overlay.querySelector('#pc-err-close').addEventListener('click', removeOverlay);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) removeOverlay(); });
     pcOverlay = overlay;
   }
 
-  // ─── Core improve logic ────────────────────────────────────────────────────
+  // ─── Core improve logic ───────────────────────────────────────────────────
 
   async function triggerImprove() {
     if (isImproving) return;
 
-    currentInput = findActiveInput();
+    currentInput = findBestInput();
     const rawPrompt = getInputText(currentInput);
 
     if (!rawPrompt || rawPrompt.length < 3) {
@@ -265,12 +603,13 @@
 
     try {
       const response = await chrome.runtime.sendMessage({
-        type: 'IMPROVE_PROMPT',
-        prompt: rawPrompt
+        type:         'IMPROVE_PROMPT',
+        prompt:       rawPrompt,
+        siteCategory: siteConfig?.category || 'UNKNOWN_AI',
+        siteUrl:      window.location.hostname,
       });
 
       removeOverlay();
-
       if (response.success) {
         createOverlay(rawPrompt, response.improvedPrompt);
       } else {
@@ -286,11 +625,8 @@
   }
 
   function applyImprovedPrompt(text) {
-    currentInput = findActiveInput();
-    if (currentInput) {
-      setInputText(currentInput, text);
-      currentInput.focus();
-    }
+    currentInput = findBestInput();
+    if (currentInput) { setInputText(currentInput, text); currentInput.focus(); }
   }
 
   function setButtonLoading(loading) {
@@ -301,80 +637,151 @@
       pcButton.disabled = true;
     } else {
       pcButton.classList.remove('pc-loading-btn');
-      pcButton.querySelector('span').textContent = 'Improve Prompt';
+      // Strip ✦ dynamically
+      pcButton.querySelector('span').textContent = (siteConfig?.label || 'Improve Prompt').replace('✦ ', '');
       pcButton.disabled = false;
     }
   }
 
-  function resetButton() {
-    setButtonLoading(false);
-  }
+  function resetButton() { setButtonLoading(false); }
 
-  // ─── Keyboard shortcut listener ────────────────────────────────────────────
+  // ─── Keyboard shortcut ────────────────────────────────────────────────────
 
-  chrome.runtime.onMessage.addListener((message) => {
-    if (message.type === 'TRIGGER_IMPROVE') {
-      triggerImprove();
-    }
+  chrome.runtime.onMessage.addListener(message => {
+    if (message.type === 'TRIGGER_IMPROVE') triggerImprove();
   });
 
-  // ─── Inject button into page ───────────────────────────────────────────────
+  // ─── Init & SPA navigation ────────────────────────────────────────────────
 
-  function injectButton() {
-    if (document.getElementById('promptcraft-btn')) return;
-    pcButton = createButton();
-    pcButton.style.display = 'none';
-    document.body.appendChild(pcButton);
-  }
-
-  function updateButtonVisibility() {
-    const input = findActiveInput();
-    if (input && pcButton) {
-      positionButton(input);
-    } else if (pcButton) {
-      pcButton.style.display = 'none';
+  function runDetection() {
+    siteConfig = getSiteConfig();
+    if (siteConfig) {
+      injectButton(); // injected hidden; focus listener will show it
+    } else {
+      removeButton();
     }
   }
-
-  // ─── Watch for input focus ─────────────────────────────────────────────────
-
-  document.addEventListener('focusin', (e) => {
-    const selector = getSelector();
-    if (e.target.matches(selector) || e.target.closest(selector)) {
-      currentInput = findActiveInput();
-      if (pcButton) positionButton(currentInput || e.target);
-    }
-  });
-
-  document.addEventListener('focusout', () => {
-    // Small delay so button click registers before hiding
-    setTimeout(() => {
-      const focused = document.activeElement;
-      if (focused?.id !== 'promptcraft-btn' && !focused?.closest('#promptcraft-overlay')) {
-        if (pcButton) pcButton.style.display = 'none';
-      }
-    }, 150);
-  });
-
-  window.addEventListener('scroll', updateButtonVisibility, { passive: true });
-  window.addEventListener('resize', updateButtonVisibility, { passive: true });
-
-  // ─── Init ──────────────────────────────────────────────────────────────────
 
   function init() {
-    injectButton();
-    // Re-check after SPA navigation (ChatGPT, Gemini are SPAs)
-    const observer = new MutationObserver(() => {
-      if (!document.getElementById('promptcraft-btn')) {
-        injectButton();
+    runDetection();
+
+    // ── Auto-focus check: show button if input is already focused ──────
+    function checkAutoFocus() {
+      if (!siteConfig || !pcButton) return;
+      const input = findBestInput();
+      if (!input) return;
+      if (document.activeElement === input || input.contains(document.activeElement)) {
+        currentInput = input;
+        showButton(input);
+      }
+    }
+
+    // Attach focus/blur DIRECTLY to the input element so programmatic
+    // .focus() calls (which don't always bubble 'focusin') are also caught.
+    function attachDirectListeners(inputEl) {
+      if (!inputEl || inputEl._prombitAttached) return;
+      inputEl._prombitAttached = true;
+
+      inputEl.addEventListener('focus', () => {
+        if (!siteConfig || !pcButton) return;
+        currentInput = inputEl;
+        showButton(inputEl);
+      });
+
+      inputEl.addEventListener('blur', () => {
+        setTimeout(() => {
+          const focused   = document.activeElement;
+          const onButton  = focused?.closest('#promptcraft-btn');
+          const onOverlay = focused?.closest('#promptcraft-overlay');
+          if (!onButton && !onOverlay) hideButton();
+        }, 200);
+      });
+    }
+
+    // ── Document-level focusin: walk DOM from e.target ─────────────────
+    document.addEventListener('focusin', (e) => {
+      if (!siteConfig || !pcButton) return;
+
+      let el = e.target;
+      while (el && el !== document.body) {
+        const tag  = el.tagName || '';
+        const type = (el.getAttribute?.('type') || '').toLowerCase();
+        const role = (el.getAttribute?.('role') || '').toLowerCase();
+
+        const isEditable  = el.isContentEditable;
+        const isTextarea  = tag === 'TEXTAREA';
+        const isTextInput = tag === 'INPUT' && ['text', 'search', ''].includes(type);
+        const isTextbox   = role === 'textbox';
+
+        if (isEditable || isTextarea || isTextInput || isTextbox) {
+          const rect = el.getBoundingClientRect();
+          if (rect.width > 100 && rect.height >= 20) {
+            currentInput = el;
+            showButton(el);
+            attachDirectListeners(el);
+            return;
+          }
+        }
+        el = el.parentElement;
       }
     });
-    observer.observe(document.body, { childList: true, subtree: true });
+
+    // ── Document-level focusout: hide when moving away ─────────────────
+    document.addEventListener('focusout', () => {
+      setTimeout(() => {
+        const focused   = document.activeElement;
+        const onButton  = focused?.closest('#promptcraft-btn');
+        const onOverlay = focused?.closest('#promptcraft-overlay');
+        if (!onButton && !onOverlay) hideButton();
+      }, 200);
+    });
+
+    // ── Reposition on scroll/resize so button tracks the input ─────────
+    window.addEventListener('scroll', () => {
+      if (pcButton && pcButton.style.display !== 'none' && currentInput) {
+        positionButton(currentInput);
+      }
+    }, { passive: true });
+
+    window.addEventListener('resize', () => {
+      if (pcButton && pcButton.style.display !== 'none' && currentInput) {
+        positionButton(currentInput);
+      }
+    }, { passive: true });
+
+    // ── Check auto-focus now + after short delays ───────────────────────
+    checkAutoFocus();
+    setTimeout(checkAutoFocus, 500);
+    setTimeout(checkAutoFocus, 1500);
+    setTimeout(() => attachDirectListeners(findBestInput()), 600);
+
+    // ── SPA: poll for URL changes ───────────────────────────────────────
+    setInterval(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        removeButton();
+        setTimeout(() => {
+          runDetection();
+          setTimeout(checkAutoFocus, 200);
+          setTimeout(() => attachDirectListeners(findBestInput()), 300);
+        }, 800);
+      }
+    }, 500);
+
+    // ── Keep button injected if SPA removes it from the DOM ────────────
+    new MutationObserver(() => {
+      if (siteConfig && !document.getElementById('promptcraft-btn')) {
+        injectButton();
+        setTimeout(checkAutoFocus, 100);
+      }
+    }).observe(document.body, { childList: true, subtree: true });
   }
+
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
     init();
   }
+
 })();

@@ -9,13 +9,7 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://chatgpt.com/*",
-    "https://chat.openai.com/*",
-    "https://gemini.google.com/*",
-    "https://claude.ai/*",
-    "https://www.perplexity.ai/*",
-    "https://copilot.microsoft.com/*",
-    "https://prombit.vercel.app/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "src/background/background.js",
@@ -23,14 +17,7 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://chatgpt.com/*",
-        "https://chat.openai.com/*",
-        "https://gemini.google.com/*",
-        "https://claude.ai/*",
-        "https://www.perplexity.ai/*",
-        "https://copilot.microsoft.com/*"
-      ],
+      "matches": ["<all_urls>"],
       "js": ["src/content/content.js"],
       "css": ["styles/injected.css"],
       "run_at": "document_idle"

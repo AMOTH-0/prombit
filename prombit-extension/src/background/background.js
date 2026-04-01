@@ -2,15 +2,15 @@
 
 // ─── Core handler ──────────────────────────────────────────────────────────
 
-async function handleImprovePrompt(rawPrompt) {
+async function handleImprovePrompt(rawPrompt, siteCategory = 'UNKNOWN_AI') {
   if (!rawPrompt || rawPrompt.trim().length < 3) throw new Error('PROMPT_TOO_SHORT');
 
   const response = await fetch('https://prombit.vercel.app/api/improve', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: rawPrompt })
+    body: JSON.stringify({ prompt: rawPrompt, siteCategory })
   });
-  
+
   const data = await response.json();
   if (!data.success) throw new Error(data.error);
   return data.improvedPrompt;
@@ -20,7 +20,7 @@ async function handleImprovePrompt(rawPrompt) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'IMPROVE_PROMPT') {
-    handleImprovePrompt(message.prompt)
+    handleImprovePrompt(message.prompt, message.siteCategory)
       .then(result => sendResponse({ success: true, improvedPrompt: result }))
       .catch(err => sendResponse({ success: false, error: err.message }));
     return true;
