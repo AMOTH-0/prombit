@@ -4,6 +4,7 @@
   "description": "Vercel serverless backend for Prombit Chrome Extension",
   "main": "api/improve.js",
   "dependencies": {
+    "@upstash/redis": "^1.37.0",
     "openai": "^4.28.0"
   }
 }
