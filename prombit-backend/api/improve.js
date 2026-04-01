@@ -15,6 +15,7 @@ const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_R
 const COST_IN_NANO_PER_TOKEN = 140;   // $0.14 per 1M tokens
 const COST_OUT_NANO_PER_TOKEN = 280;  // $0.28 per 1M tokens
 const MAX_BUDGET_NANO = 5_000_000_000; // $5.00 strict daily limit
+const MAX_MONTHLY_BUDGET_NANO = 25_000_000_000; // $25.00 strict monthly limit
 const MAX_RESERVATION_NANO = Math.ceil((1200 * COST_IN_NANO_PER_TOKEN) + (200 * COST_OUT_NANO_PER_TOKEN));
 
 // ─── Category-specific system prompts ─────────────────────────────────────
@@ -130,7 +131,9 @@ module.exports = async (req, res) => {
   let outTokens = 0;
   let promptLength = 0;
   let budgetKey = `prombit:cost:usd:${dateStr}`;
+  let monthlyBudgetKey = `prombit:cost:usd:${dateStr.substring(0, 7)}`; // "2026-04"
   let newTotalNano = 0;
+  let newMonthlyNano = 0;
 
   const fail = async (statusCode, errorCode, statusString) => {
     telemetryStatus = statusString;
@@ -180,15 +183,25 @@ module.exports = async (req, res) => {
       return fail(400, 'PROMPT_POLICY_VIOLATION', 'blocked');
     }
 
-    // 7. Atomic Budget Pre-Reservation
+    // 7. Atomic Budget Pre-Reservation (Daily + Monthly)
     if (redis) {
       try {
-        newTotalNano = await redis.incrby(budgetKey, MAX_RESERVATION_NANO);
-        await redis.expire(budgetKey, 86400, { nx: true });
+        const [monthVal, dayVal] = await redis.pipeline()
+          .incrby(monthlyBudgetKey, MAX_RESERVATION_NANO)
+          .incrby(budgetKey, MAX_RESERVATION_NANO)
+          .expire(monthlyBudgetKey, 86400 * 60, { nx: true }) // 60 days
+          .expire(budgetKey, 86400, { nx: true })
+          .exec();
+          
+        newMonthlyNano = Number(monthVal) || 0;
+        newTotalNano = Number(dayVal) || 0;
         
-        if (newTotalNano > MAX_BUDGET_NANO) {
-          await redis.decrby(budgetKey, MAX_RESERVATION_NANO);
-          return fail(503, 'SERVICE_DISABLED_DAILY_BUDGET_EXCEEDED', 'budget_locked');
+        if (newTotalNano > MAX_BUDGET_NANO || newMonthlyNano > MAX_MONTHLY_BUDGET_NANO) {
+          await redis.pipeline()
+            .decrby(budgetKey, MAX_RESERVATION_NANO)
+            .decrby(monthlyBudgetKey, MAX_RESERVATION_NANO)
+            .exec();
+          return fail(503, 'SERVICE_DISABLED_BUDGET_EXCEEDED', 'budget_locked');
         }
         
         // Alerts exactly once per threshold
@@ -222,15 +235,19 @@ module.exports = async (req, res) => {
     return res.status(200).json({ success: true, improvedPrompt: result.content });
 
   } catch (error) {
-    console.error('[SERVER ERROR]', error.message);
+    // Scrub logs: DO NOT log error.message because upstream SDK embeds PII (raw prompt text) on validation errors
+    console.error('[SERVER ERROR]', error.name || error.code || error.status || 'UNKNOWN');
     telemetryStatus = 'upstream_fail';
     return res.status(500).json({ success: false, error: 'INTERNAL_SERVER_ERROR' });
   } finally {
     // 9. Mandatory Budget Refund Adjustment
-    if (redis && newTotalNano > 0) {
+    if (redis && newTotalNano > 0 && newMonthlyNano > 0) {
       const unusedReserve = MAX_RESERVATION_NANO - actualCostNano;
-      if (unusedReserve > 0) {
-        await redis.decrby(budgetKey, unusedReserve);
+      if (unusedReserve > 0 && !isNaN(unusedReserve)) {
+        await redis.pipeline()
+          .decrby(budgetKey, unusedReserve)
+          .decrby(monthlyBudgetKey, unusedReserve)
+          .exec();
       }
     }
 

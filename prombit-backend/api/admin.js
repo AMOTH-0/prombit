@@ -17,6 +17,25 @@ module.exports = async (req, res) => {
     return res.status(401).json({ error: 'UNAUTHORIZED' });
   }
 
+  // Rate Limiting on Admin Route (Max 5/min, 100/hr)
+  const forwarded = req.headers['x-forwarded-for'];
+  const rawIp = forwarded ? forwarded.split(',')[0].trim() : (req.headers['x-real-ip'] || 'unknown');
+  
+  if (redis) {
+    try {
+      const minKey = `prombit:admin:min:${rawIp}`;
+      const hrKey = `prombit:admin:hr:${rawIp}`;
+      const [minHits, hrHits] = await redis.pipeline()
+        .incr(minKey).incr(hrKey)
+        .expire(minKey, 60, { nx: true }).expire(hrKey, 3600, { nx: true })
+        .exec();
+        
+      if (minHits > 5 || hrHits > 100) return res.status(429).json({ error: 'TOO_MANY_REQUESTS' });
+    } catch (e) {
+      return res.status(503).json({ error: 'RATE_LIMIT_UNAVAILABLE' });
+    }
+  }
+
   const dateStr = req.query.date || new Date().toISOString().split('T')[0];
   
   if (!redis) {
