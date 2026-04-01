@@ -102,6 +102,13 @@ module.exports = async (req, res) => {
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });
   }
 
+  // Strict Origin Validation (Security)
+  // Ensure the request comes from a Chrome Extension (or localhost for testing)
+  const origin = req.headers.origin || '';
+  if (!origin.startsWith('chrome-extension://') && !origin.includes('localhost') && origin !== 'null') {
+    return res.status(403).json({ success: false, error: 'FORBIDDEN_ORIGIN' });
+  }
+
   try {
     // Rate limiting
     const ip = req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || 'unknown';

@@ -5,8 +5,7 @@
   "description": "Automatically improves your AI prompts for better results.",
   "permissions": [
     "activeTab",
-    "storage",
-    "scripting"
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"

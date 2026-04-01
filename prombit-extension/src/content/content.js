@@ -503,10 +503,10 @@
 
   // ─── Overlay helpers ──────────────────────────────────────────────────────
 
-  // Single-pass escapeHtml: one regex, one string allocation instead of four
-  const _ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '\n': '<br>' };
+  // Single-pass escapeHtml: strict XSS protection including quotes
+  const _ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;', '\n': '<br>' };
   function escapeHtml(text) {
-    return text.replace(/[&<>\n]/g, c => _ESC_MAP[c]);
+    return text.replace(/[&<>"'\n]/g, c => _ESC_MAP[c]);
   }
 
   function removeOverlay() {
@@ -591,11 +591,9 @@
   function showErrorOverlay(message) {
     removeOverlay();
     const msgs = {
-      NO_API_KEY:       'No API key found. Click the Prombit icon in your toolbar to configure it.',
-      UNKNOWN_API_KEY:  'Key format not recognised. Supported: Anthropic, OpenAI, Google.',
-      INVALID_API_KEY:  'Your API key was rejected. Double-check it is correct.',
       RATE_LIMITED:     "You've hit the API rate limit. Please wait a moment and try again.",
       PROMPT_TOO_SHORT: 'Your prompt is too short to improve. Write a bit more first.',
+      INTERNAL_SERVER_ERROR: 'The server encountered an error. Please try again later.'
     };
     const overlay = buildOverlayShell();
     overlay.innerHTML = `
