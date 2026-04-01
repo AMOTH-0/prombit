@@ -11,6 +11,12 @@ const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_R
   ? Redis.fromEnv() 
   : null;
 
+// ─── Budget Constants (Nano-dollars: 1 USD = 1,000,000,000 nUSD) ───────────
+const COST_IN_NANO_PER_TOKEN = 140;   // $0.14 per 1M tokens
+const COST_OUT_NANO_PER_TOKEN = 280;  // $0.28 per 1M tokens
+const MAX_BUDGET_NANO = 5_000_000_000; // $5.00 strict daily limit
+const MAX_RESERVATION_NANO = Math.ceil((1200 * COST_IN_NANO_PER_TOKEN) + (200 * COST_OUT_NANO_PER_TOKEN));
+
 // ─── Category-specific system prompts ─────────────────────────────────────
 
 const SYSTEM_PROMPTS = {
@@ -159,9 +165,9 @@ module.exports = async (req, res) => {
     return res.status(405).json({ success: false, error: 'Method Not Allowed' });
   }
 
-  // 1. Kill Switch
-  if (process.env.KILL_SWITCH === 'true') {
-    return res.status(503).json({ success: false, error: 'SERVICE_UNAVAILABLE' });
+  // 1. Kill Switch & Emergency Override
+  if (process.env.KILL_SWITCH === 'true' || process.env.FORCE_DISABLE === 'true') {
+    return res.status(503).json({ success: false, error: 'SERVICE_DISABLED_MANUALLY' });
   }
 
   // 2. Strict Origin Validation
@@ -227,13 +233,52 @@ module.exports = async (req, res) => {
       ? `${withLanguage}\n\nThis prompt is being written for: ${siteUrl}\nApply your knowledge of how prompts work best on this specific platform, including any platform-specific syntax, parameters, or conventions.`
       : withLanguage;
 
-    // 7. Execute
-    const result = await improvePrompt(trimmedPrompt, systemPrompt);
+    // 7. Atomic Budget Pre-Reservation
+    const todayStr = new Date().toISOString().split('T')[0];
+    const budgetKey = `prombit:cost:usd:${todayStr}`;
+    let newTotalNano = 0;
     
-    // Log telemetry
-    console.log(`[OK] Improved ~${trimmedPrompt.length} chars for ${siteUrl || siteCategory.substring(0, 20)} | IP: ${crypto.createHash('sha256').update(ip).digest('hex').substring(0, 8)} | Tokens Used: ${result.usage?.total_tokens || '?'}`);
+    if (redis) {
+      try {
+        newTotalNano = await redis.incrby(budgetKey, MAX_RESERVATION_NANO);
+        await redis.expire(budgetKey, 86400, { nx: true });
+        
+        if (newTotalNano > MAX_BUDGET_NANO) {
+          await redis.decrby(budgetKey, MAX_RESERVATION_NANO);
+          console.error(`[CRITICAL] DAILY BUDGET EXCEEDED ($5.00). SYSTEM LOCKED.`);
+          return res.status(503).json({ success: false, error: 'SERVICE_DISABLED_DAILY_BUDGET_EXCEEDED' });
+        }
+        
+        if (newTotalNano > MAX_BUDGET_NANO * 0.8) {
+          console.warn(`[WARN] Daily usage at ${(newTotalNano / MAX_BUDGET_NANO * 100).toFixed(1)}% ($${(newTotalNano / 1e9).toFixed(2)} / $5.00)`);
+        }
+      } catch (e) {
+        console.error('[REDIS] Budget check failed:', e.message);
+        return res.status(500).json({ success: false, error: 'BUDGET_CHECK_UNAVAILABLE' });
+      }
+    }
 
-    return res.status(200).json({ success: true, improvedPrompt: result.content });
+    // 8. Execute & Refund Escrow
+    let actualCostNano = 0;
+    try {
+      const result = await improvePrompt(trimmedPrompt, systemPrompt);
+      
+      const inTokens = result.usage?.prompt_tokens || 0;
+      const outTokens = result.usage?.completion_tokens || 0;
+      actualCostNano = Math.ceil((inTokens * COST_IN_NANO_PER_TOKEN) + (outTokens * COST_OUT_NANO_PER_TOKEN));
+      
+      console.log(`[OK] IP: ${crypto.createHash('sha256').update(ip).digest('hex').substring(0, 8)} | Tokens: ${inTokens + outTokens} | Cost: $${(actualCostNano / 1e9).toFixed(5)}`);
+      
+      return res.status(200).json({ success: true, improvedPrompt: result.content });
+    } finally {
+      if (redis) {
+        const unusedReserve = MAX_RESERVATION_NANO - actualCostNano;
+        if (unusedReserve > 0 && newTotalNano > 0) {
+          const finalDaily = await redis.decrby(budgetKey, unusedReserve);
+          console.log(`[BUDGET] Total Today: $${(finalDaily / 1e9).toFixed(4)} / $5.00`);
+        }
+      }
+    }
 
   } catch (error) {
     console.error('[SERVER ERROR]', error.message);
