@@ -32,8 +32,8 @@ async function improvePrompt(rawPrompt, systemPrompt) {
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: rawPrompt }
       ],
-      max_tokens:  1024,
-      temperature: 0.3, // lower = faster + more deterministic for prompt rewriting
+      max_tokens:  200,   // drastically limits output length to prevent 5-10 second generation times
+      temperature: 0.0,   // 0.0 uses greedy decoding (argmax), skipping sampling logic for the fastest possible output
     }, { signal: controller.signal });
 
     return completion.choices[0].message.content;
