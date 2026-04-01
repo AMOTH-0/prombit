@@ -1,12 +1,12 @@
 const { improvePrompt } = require('../lib/deepseek');
-const crypto = require('crypto');
 const { Redis } = require('@upstash/redis');
+const { hashIdentifier } = require('../lib/hash');
+const { isDenylisted } = require('../lib/denylist');
+const { trackAnomaly } = require('../lib/anomaly');
+const { triggerBudgetAlertOnce } = require('../lib/alerts');
+const { safeTelemetryEvent } = require('../lib/telemetry');
 
-// ─── Constants & Configuration ─────────────────────────────────────────────
-
-const CLIENT_SECRET = process.env.PROMBIT_CLIENT_SECRET || 'pr0mb1t_h4rd3n3d_x92k_2026';
-
-// Initialize Redis if env vars are present (Upstash generates these in Vercel)
+// Initialize Redis if env vars are present
 const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) 
   ? Redis.fromEnv() 
   : null;
@@ -18,7 +18,6 @@ const MAX_BUDGET_NANO = 5_000_000_000; // $5.00 strict daily limit
 const MAX_RESERVATION_NANO = Math.ceil((1200 * COST_IN_NANO_PER_TOKEN) + (200 * COST_OUT_NANO_PER_TOKEN));
 
 // ─── Category-specific system prompts ─────────────────────────────────────
-
 const SYSTEM_PROMPTS = {
   TEXT_CHAT: `You are Prombit. Rewrite this AI chat prompt to be clearer and more structured.
 Add: a role for the AI, context, specific task, output format, and constraints.
@@ -84,160 +83,104 @@ Return ONLY the improved prompt. No explanations.`,
 
 const LANGUAGE_RULE = `- Detect the language of the user's prompt and write the improved prompt in that same language. If the prompt is in Korean, respond in Korean. If in Japanese, respond in Japanese. If in French, respond in French. Always match the user's language exactly.`;
 
-
-// ─── Security Helpers ──────────────────────────────────────────────────────
-
-function verifySignature(payload, timeHeader, nonceHeader, sigHeader) {
-  if (!timeHeader || !nonceHeader || !sigHeader) return false;
-  
-  // Reject if older than 5 minutes (300,000 ms)
-  const reqTime = parseInt(timeHeader, 10);
-  if (isNaN(reqTime) || Math.abs(Date.now() - reqTime) > 300000) return false;
-
-  const dataToSign = timeHeader + nonceHeader + payload;
-  const expectedSig = crypto.createHmac('sha256', CLIENT_SECRET).update(dataToSign).digest('hex');
-  
-  // Prevent timing attacks
-  try {
-    return crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(sigHeader));
-  } catch (err) {
-    return false; // length mismatch throws an error
-  }
-}
-
-async function verifyNonce(nonce) {
-  if (!redis) return true; // Fail gracefully if Redis is unsupported
-  try {
-    const key = `prombit:nonce:${nonce}`;
-    // sets key only if it doesn't exist, expires in 5 mins
-    const success = await redis.set(key, '1', { nx: true, ex: 300 }); 
-    return (success === 'OK' || success === 1 || success === true);
-  } catch (err) {
-    console.warn('[REDIS] Nonce error:', err.message);
-    return true; // Fail graceful
-  }
-}
+// ─── Rate Limit Helper ─────────────────────────────────────────────────────
 
 async function checkRedisRateLimit(ip) {
   if (!redis) return true; 
-  
   const minKey = `prombit:req:min:${ip}`;
   const hrKey  = `prombit:req:hr:${ip}`;
   const dayKey = `prombit:req:day:${ip}`;
   const globalHrKey = `prombit:global:hr`;
 
   try {
-    // Pipeline increments and set expiry logic natively.
     const [minHits, hrHits, dayHits, globalHits] = await redis.pipeline()
-      .incr(minKey)
-      .incr(hrKey)
-      .incr(dayKey)
-      .incr(globalHrKey)
-      .expire(minKey, 60, { nx: true })
-      .expire(hrKey, 3600, { nx: true })
-      .expire(dayKey, 86400, { nx: true })
-      .expire(globalHrKey, 3600, { nx: true })
+      .incr(minKey).incr(hrKey).incr(dayKey).incr(globalHrKey)
+      .expire(minKey, 60, { nx: true }).expire(hrKey, 3600, { nx: true }).expire(dayKey, 86400, { nx: true }).expire(globalHrKey, 3600, { nx: true })
       .exec();
 
     // 15/min, 50/hour, 200/day
-    if (minHits > 15 || hrHits > 50 || dayHits > 200) {
-      return false; // Rate limited
-    }
-
+    if (minHits > 15 || hrHits > 50 || dayHits > 200) return false; 
+    
     // Global bucket breaker
     if (globalHits > 5000) {
       console.error('[SECURITY] GLOBAL RATE LIMIT EXCEEDED. CIRCUIT BREAKER TRIPPED.');
       return false;
     }
-
     return true;
-  } catch (err) {
-    console.warn('[REDIS] Rate limit error:', err.message);
-    return true; // Fail gracefully
-  }
+  } catch (err) { return true; } // Fail gracefully
 }
 
 // ─── Main Handler ──────────────────────────────────────────────────────────
 
 module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: 'Method Not Allowed' });
-  }
+  if (req.method !== 'POST') return res.status(405).json({ success: false, error: 'Method Not Allowed' });
 
-  // 1. Kill Switch & Emergency Override
-  if (process.env.KILL_SWITCH === 'true' || process.env.FORCE_DISABLE === 'true') {
-    return res.status(503).json({ success: false, error: 'SERVICE_DISABLED_MANUALLY' });
-  }
+  const dateStr = new Date().toISOString().split('T')[0];
+  const forwarded = req.headers['x-forwarded-for'];
+  const rawIp = forwarded ? forwarded.split(',')[0].trim() : (req.headers['x-real-ip'] || 'unknown');
+  const ua = req.headers['user-agent'] || '';
+  
+  // Create an untraceable but persistent fingerprint for the source
+  const hashedSource = hashIdentifier(`${rawIp}|${ua}`);
 
-  // 2. Strict Origin Validation
-  const origin = req.headers.origin || '';
-  if (!origin.startsWith('chrome-extension://') && !origin.includes('localhost')) {
-    return res.status(403).json({ success: false, error: 'FORBIDDEN_ORIGIN' });
-  }
+  let telemetryStatus = 'upstream_fail';
+  let actualCostNano = 0;
+  let inTokens = 0;
+  let outTokens = 0;
+  let promptLength = 0;
+  let budgetKey = `prombit:cost:usd:${dateStr}`;
+  let newTotalNano = 0;
+
+  const fail = async (statusCode, errorCode, statusString) => {
+    telemetryStatus = statusString;
+    return res.status(statusCode).json({ success: false, error: errorCode });
+  };
 
   try {
-    // 3. HMAC Auth & Replay Prevention
-    const sigHeader   = req.headers['x-prombit-sig'];
-    const timeHeader  = req.headers['x-prombit-time'];
-    const nonceHeader = req.headers['x-prombit-nonce'];
-    
-    // Reproduce original payload string identically to extension
-    const { prompt } = req.body || {};
-    let { siteCategory = 'UNKNOWN_AI', siteUrl = '' } = req.body || {};
-
-    // Hard bounds on auxiliary inputs to block cost inflation attacks
-    if (typeof siteCategory !== 'string' || siteCategory.length > 50) return res.status(400).json({ success: false, error: 'PAYLOAD_TOO_LARGE' });
-    if (typeof siteUrl !== 'string' || siteUrl.length > 500) return res.status(400).json({ success: false, error: 'PAYLOAD_TOO_LARGE' });
-
-    const payloadStr = JSON.stringify({ prompt, siteCategory, siteUrl });
-
-    if (!verifySignature(payloadStr, timeHeader, nonceHeader, sigHeader)) {
-      return res.status(401).json({ success: false, error: 'INVALID_SIGNATURE' });
+    // 1. Kill Switch & Emergency Override
+    if (process.env.KILL_SWITCH === 'true' || process.env.FORCE_DISABLE === 'true') {
+      return fail(503, 'SERVICE_DISABLED_MANUALLY', 'budget_locked');
     }
 
-    if (!(await verifyNonce(nonceHeader))) {
-      return res.status(401).json({ success: false, error: 'REPLAY_DETECTED' });
+    // 2. Denylist Check
+    if (await isDenylisted(redis, hashedSource)) {
+      return fail(403, 'FORBIDDEN_SOURCE', 'denylisted');
+    }
+
+    // 3. Strict Origin Validation
+    const origin = req.headers.origin || '';
+    if (!origin.startsWith('chrome-extension://') && !origin.includes('localhost')) {
+      return fail(403, 'FORBIDDEN_ORIGIN', 'blocked');
     }
 
     // 4. Rate Limiting
-    const forwarded = req.headers['x-forwarded-for'];
-    const ip = forwarded ? forwarded.split(',')[0].trim() : (req.headers['x-real-ip'] || 'unknown');
-    if (!(await checkRedisRateLimit(ip))) {
-      return res.status(429).json({ success: false, error: 'RATE_LIMITED' });
+    if (!(await checkRedisRateLimit(hashedSource))) {
+      return fail(429, 'RATE_LIMITED', 'rate_limited');
     }
 
     // 5. Schema & Validation
-    if (!prompt || typeof prompt !== 'string') {
-      return res.status(400).json({ success: false, error: 'PROMPT_MISSING' });
-    }
-    const trimmedPrompt = prompt.trim();
-    if (trimmedPrompt.length < 3) {
-      return res.status(400).json({ success: false, error: 'PROMPT_TOO_SHORT' });
-    }
-    if (trimmedPrompt.length > 4000) {
-      return res.status(400).json({ success: false, error: 'PROMPT_TOO_LONG' });
-    }
+    const { prompt } = req.body || {};
+    let { siteCategory = 'UNKNOWN_AI', siteUrl = '' } = req.body || {};
 
-    // Heuristics: Block jailbreak or proxy attempts
+    if (typeof siteCategory !== 'string' || siteCategory.length > 50) return fail(400, 'PAYLOAD_TOO_LARGE', 'validation_fail');
+    if (typeof siteUrl !== 'string' || siteUrl.length > 500) return fail(400, 'PAYLOAD_TOO_LARGE', 'validation_fail');
+
+    if (!prompt || typeof prompt !== 'string') return fail(400, 'PROMPT_MISSING', 'validation_fail');
+    
+    const trimmedPrompt = prompt.trim();
+    promptLength = trimmedPrompt.length;
+
+    if (promptLength < 3) return fail(400, 'PROMPT_TOO_SHORT', 'validation_fail');
+    if (promptLength > 4000) return fail(400, 'PROMPT_TOO_LONG', 'validation_fail');
+
+    // 6. Heuristics
     const blocklist = /ignore all prior|ignore all previous|disregard.{0,50}instructions|forget everything|system prompt|you are a helpful assistant|bypass|jailbreak/i;
     if (blocklist.test(trimmedPrompt)) {
-      console.warn(`[SECURITY] Blocked prompt injection from IP: ${ip}`);
-      return res.status(400).json({ success: false, error: 'PROMPT_POLICY_VIOLATION' });
+      return fail(400, 'PROMPT_POLICY_VIOLATION', 'blocked');
     }
 
-    // 6. Build the system prompt
-    const basePrompt = SYSTEM_PROMPTS[siteCategory] || SYSTEM_PROMPTS['UNKNOWN_AI'];
-    const withLanguage = `${basePrompt}\n${LANGUAGE_RULE}`;
-    const systemPrompt = siteUrl
-      ? `${withLanguage}\n\nThis prompt is being written for: ${siteUrl}\nApply your knowledge of how prompts work best on this specific platform, including any platform-specific syntax, parameters, or conventions.`
-      : withLanguage;
-
     // 7. Atomic Budget Pre-Reservation
-    const todayStr = new Date().toISOString().split('T')[0];
-    const budgetKey = `prombit:cost:usd:${todayStr}`;
-    let newTotalNano = 0;
-    
     if (redis) {
       try {
         newTotalNano = await redis.incrby(budgetKey, MAX_RESERVATION_NANO);
@@ -245,46 +188,57 @@ module.exports = async (req, res) => {
         
         if (newTotalNano > MAX_BUDGET_NANO) {
           await redis.decrby(budgetKey, MAX_RESERVATION_NANO);
-          console.error(`[CRITICAL] DAILY BUDGET EXCEEDED ($5.00). SYSTEM LOCKED.`);
-          return res.status(503).json({ success: false, error: 'SERVICE_DISABLED_DAILY_BUDGET_EXCEEDED' });
+          return fail(503, 'SERVICE_DISABLED_DAILY_BUDGET_EXCEEDED', 'budget_locked');
         }
         
-        if (newTotalNano > MAX_BUDGET_NANO * 0.8) {
-          console.warn(`[WARN] Daily usage at ${(newTotalNano / MAX_BUDGET_NANO * 100).toFixed(1)}% ($${(newTotalNano / 1e9).toFixed(2)} / $5.00)`);
+        // Alerts exactly once per threshold
+        if (newTotalNano >= MAX_BUDGET_NANO) {
+          triggerBudgetAlertOnce(redis, dateStr, 100, newTotalNano, MAX_BUDGET_NANO);
+        } else if (newTotalNano > MAX_BUDGET_NANO * 0.8) {
+          triggerBudgetAlertOnce(redis, dateStr, 80, newTotalNano, MAX_BUDGET_NANO);
+        } else if (newTotalNano > MAX_BUDGET_NANO * 0.5) {
+          triggerBudgetAlertOnce(redis, dateStr, 50, newTotalNano, MAX_BUDGET_NANO);
         }
       } catch (e) {
-        console.error('[REDIS] Budget check failed:', e.message);
-        return res.status(500).json({ success: false, error: 'BUDGET_CHECK_UNAVAILABLE' });
+        return fail(500, 'BUDGET_CHECK_UNAVAILABLE', 'upstream_fail');
       }
     }
 
-    // 8. Execute & Refund Escrow
-    let actualCostNano = 0;
-    try {
-      const result = await improvePrompt(trimmedPrompt, systemPrompt);
-      
-      const inTokens = result.usage?.prompt_tokens || 0;
-      const outTokens = result.usage?.completion_tokens || 0;
-      actualCostNano = Math.ceil((inTokens * COST_IN_NANO_PER_TOKEN) + (outTokens * COST_OUT_NANO_PER_TOKEN));
-      
-      console.log(`[OK] IP: ${crypto.createHash('sha256').update(ip).digest('hex').substring(0, 8)} | Tokens: ${inTokens + outTokens} | Cost: $${(actualCostNano / 1e9).toFixed(5)}`);
-      
-      return res.status(200).json({ success: true, improvedPrompt: result.content });
-    } finally {
-      if (redis) {
-        const unusedReserve = MAX_RESERVATION_NANO - actualCostNano;
-        if (unusedReserve > 0 && newTotalNano > 0) {
-          const finalDaily = await redis.decrby(budgetKey, unusedReserve);
-          console.log(`[BUDGET] Total Today: $${(finalDaily / 1e9).toFixed(4)} / $5.00`);
-        }
-      }
-    }
+    // 8. Build Prompt & Execute
+    const basePrompt = SYSTEM_PROMPTS[siteCategory] || SYSTEM_PROMPTS['UNKNOWN_AI'];
+    const withLanguage = `${basePrompt}\n${LANGUAGE_RULE}`;
+    const systemPrompt = siteUrl
+      ? `${withLanguage}\n\nThis prompt is being written for: ${siteUrl}\nApply your knowledge of how prompts work best on this specific platform, including any platform-specific syntax, parameters, or conventions.`
+      : withLanguage;
+
+    const result = await improvePrompt(trimmedPrompt, systemPrompt);
+    
+    inTokens = result.usage?.prompt_tokens || 0;
+    outTokens = result.usage?.completion_tokens || 0;
+    actualCostNano = Math.ceil((inTokens * COST_IN_NANO_PER_TOKEN) + (outTokens * COST_OUT_NANO_PER_TOKEN));
+    
+    // Sucess
+    telemetryStatus = 'ok';
+    return res.status(200).json({ success: true, improvedPrompt: result.content });
 
   } catch (error) {
     console.error('[SERVER ERROR]', error.message);
-    return res.status(500).json({
-      success: false,
-      error: 'INTERNAL_SERVER_ERROR'
-    });
+    telemetryStatus = 'upstream_fail';
+    return res.status(500).json({ success: false, error: 'INTERNAL_SERVER_ERROR' });
+  } finally {
+    // 9. Mandatory Budget Refund Adjustment
+    if (redis && newTotalNano > 0) {
+      const unusedReserve = MAX_RESERVATION_NANO - actualCostNano;
+      if (unusedReserve > 0) {
+        await redis.decrby(budgetKey, unusedReserve);
+      }
+    }
+
+    // 10. Asynchronous Telemetry & Anomaly Processing (does not block HTTP response)
+    trackAnomaly(redis, hashedSource, telemetryStatus).catch(console.error);
+    safeTelemetryEvent(redis, {
+      dateStr, status: telemetryStatus, costNano: actualCostNano, 
+      inTokens, outTokens, promptLength, hashedSource
+    }).catch(console.error);
   }
 };
