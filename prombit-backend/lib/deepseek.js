@@ -36,7 +36,10 @@ async function improvePrompt(rawPrompt, systemPrompt) {
       temperature: 0.0,   // 0.0 uses greedy decoding (argmax), skipping sampling logic for the fastest possible output
     }, { signal: controller.signal });
 
-    return completion.choices[0].message.content;
+    return {
+      content: completion.choices[0].message.content,
+      usage: completion.usage
+    };
   } finally {
     clearTimeout(timeout); // always clear so the timer doesn't fire after success
   }

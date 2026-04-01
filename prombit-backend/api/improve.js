@@ -118,22 +118,32 @@ async function checkRedisRateLimit(ip) {
   const minKey = `prombit:req:min:${ip}`;
   const hrKey  = `prombit:req:hr:${ip}`;
   const dayKey = `prombit:req:day:${ip}`;
+  const globalHrKey = `prombit:global:hr`;
 
   try {
     // Pipeline increments and set expiry logic natively.
-    const [minHits, hrHits, dayHits] = await redis.pipeline()
+    const [minHits, hrHits, dayHits, globalHits] = await redis.pipeline()
       .incr(minKey)
       .incr(hrKey)
       .incr(dayKey)
+      .incr(globalHrKey)
       .expire(minKey, 60, { nx: true })
       .expire(hrKey, 3600, { nx: true })
       .expire(dayKey, 86400, { nx: true })
+      .expire(globalHrKey, 3600, { nx: true })
       .exec();
 
     // 15/min, 50/hour, 200/day
     if (minHits > 15 || hrHits > 50 || dayHits > 200) {
       return false; // Rate limited
     }
+
+    // Global bucket breaker
+    if (globalHits > 5000) {
+      console.error('[SECURITY] GLOBAL RATE LIMIT EXCEEDED. CIRCUIT BREAKER TRIPPED.');
+      return false;
+    }
+
     return true;
   } catch (err) {
     console.warn('[REDIS] Rate limit error:', err.message);
@@ -167,7 +177,13 @@ module.exports = async (req, res) => {
     const nonceHeader = req.headers['x-prombit-nonce'];
     
     // Reproduce original payload string identically to extension
-    const { prompt, siteCategory = 'UNKNOWN_AI', siteUrl = '' } = req.body || {};
+    const { prompt } = req.body || {};
+    let { siteCategory = 'UNKNOWN_AI', siteUrl = '' } = req.body || {};
+
+    // Hard bounds on auxiliary inputs to block cost inflation attacks
+    if (typeof siteCategory !== 'string' || siteCategory.length > 50) return res.status(400).json({ success: false, error: 'PAYLOAD_TOO_LARGE' });
+    if (typeof siteUrl !== 'string' || siteUrl.length > 500) return res.status(400).json({ success: false, error: 'PAYLOAD_TOO_LARGE' });
+
     const payloadStr = JSON.stringify({ prompt, siteCategory, siteUrl });
 
     if (!verifySignature(payloadStr, timeHeader, nonceHeader, sigHeader)) {
@@ -212,12 +228,12 @@ module.exports = async (req, res) => {
       : withLanguage;
 
     // 7. Execute
-    const improvedPrompt = await improvePrompt(trimmedPrompt, systemPrompt);
+    const result = await improvePrompt(trimmedPrompt, systemPrompt);
     
     // Log telemetry
-    console.log(`[OK] Improved ~${trimmedPrompt.length} chars for ${siteUrl || siteCategory} | IP: ${crypto.createHash('sha256').update(ip).digest('hex').substring(0, 8)}`);
+    console.log(`[OK] Improved ~${trimmedPrompt.length} chars for ${siteUrl || siteCategory.substring(0, 20)} | IP: ${crypto.createHash('sha256').update(ip).digest('hex').substring(0, 8)} | Tokens Used: ${result.usage?.total_tokens || '?'}`);
 
-    return res.status(200).json({ success: true, improvedPrompt });
+    return res.status(200).json({ success: true, improvedPrompt: result.content });
 
   } catch (error) {
     console.error('[SERVER ERROR]', error.message);
