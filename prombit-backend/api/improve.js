@@ -66,6 +66,10 @@ Add a clear role, context, task, output format, and constraints where helpful.
 Return ONLY the improved prompt. No explanations.`,
 };
 
+// ─── Shared rule appended to every category prompt ────────────────────────
+
+const LANGUAGE_RULE = `- Detect the language of the user's prompt and write the improved prompt in that same language. If the prompt is in Korean, respond in Korean. If in Japanese, respond in Japanese. If in French, respond in French. Always match the user's language exactly.`;
+
 // ─── Rate limiting ─────────────────────────────────────────────────────────
 
 const rateLimitMap = new Map();
@@ -118,11 +122,12 @@ module.exports = async (req, res) => {
       return res.status(400).json({ success: false, error: 'PROMPT_TOO_LONG' });
     }
 
-    // Build the system prompt: category instructions + site-specific context
+    // Build the system prompt: category instructions + language rule + site context
     const basePrompt = SYSTEM_PROMPTS[siteCategory] || SYSTEM_PROMPTS['UNKNOWN_AI'];
+    const withLanguage = `${basePrompt}\n${LANGUAGE_RULE}`;
     const systemPrompt = siteUrl
-      ? `${basePrompt}\n\nThis prompt is being written for: ${siteUrl}\nApply your knowledge of how prompts work best on this specific platform, including any platform-specific syntax, parameters, or conventions.`
-      : basePrompt;
+      ? `${withLanguage}\n\nThis prompt is being written for: ${siteUrl}\nApply your knowledge of how prompts work best on this specific platform, including any platform-specific syntax, parameters, or conventions.`
+      : withLanguage;
 
     // Improve
     const improvedPrompt = await improvePrompt(trimmedPrompt, systemPrompt);
