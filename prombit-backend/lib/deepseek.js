@@ -33,7 +33,7 @@ async function improvePrompt(rawPrompt, systemPrompt) {
         { role: 'user',   content: rawPrompt }
       ],
       max_tokens:  200,   // drastically limits output length to prevent 5-10 second generation times
-      temperature: 0.0,   // 0.0 uses greedy decoding (argmax), skipping sampling logic for the fastest possible output
+      temperature: 0.3,   // small positive value ensures each request is sampled independently, breaking DeepSeek's prefix-cache determinism that otherwise anchors outputs to the previous call's context
     }, { signal: controller.signal });
 
     return {
