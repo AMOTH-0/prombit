@@ -807,6 +807,32 @@
       }
     }, 500);
 
+    // ── Active-element poll: show button whenever the input has focus ──
+    // Handles cases where a popup (emoji picker, autocomplete, browser dialog)
+    // closes and focus returns to the input without reliably firing 'focus'.
+    setInterval(() => {
+      if (!siteConfig || !pcButton) return;
+      const ae = document.activeElement;
+      if (!ae || ae === document.body || ae === document.documentElement) return;
+
+      const tag  = ae.tagName || '';
+      const type = (ae.getAttribute?.('type') || '').toLowerCase();
+      const role = (ae.getAttribute?.('role') || '').toLowerCase();
+      const isEditable  = ae.isContentEditable;
+      const isTextarea  = tag === 'TEXTAREA';
+      const isTextInput = tag === 'INPUT' && ['text', 'search', ''].includes(type);
+      const isTextbox   = role === 'textbox';
+
+      if (isEditable || isTextarea || isTextInput || isTextbox) {
+        const rect = ae.getBoundingClientRect();
+        if (rect.width > 100 && rect.height >= 20 && pcButton.style.display === 'none') {
+          currentInput = ae;
+          attachDirectListeners(ae);
+          showButton(ae);
+        }
+      }
+    }, 300);
+
     // ── Keep button injected if SPA removes it from the DOM ────────────
     // pcButton.isConnected avoids a live DOM query on every mutation
     new MutationObserver(() => {
