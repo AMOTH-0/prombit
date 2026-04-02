@@ -325,13 +325,10 @@
       '[role="textbox"], div[contenteditable="true"], div[contenteditable=""], textarea, input[type="text"], input:not([type])'
     );
 
-    // Filter to visible, plausibly prompt-sized elements
+    // Filter to elements that pass the prompt-input guard
     const visible = [];
     for (const el of all) {
-      const rect = el.getBoundingClientRect();
-      if (rect.width > 180 && rect.height >= 24 && rect.top < window.innerHeight && rect.bottom > 0) {
-        visible.push(el);
-      }
+      if (isPromptInput(el)) visible.push(el);
     }
 
     if (!visible.length) return null;
@@ -391,6 +388,45 @@
     if (['password', 'email', 'search', 'tel', 'url', 'number'].includes(t)) s = -999;
 
     return s;
+  }
+
+  // ─── Prompt-input guard ───────────────────────────────────────────────────
+  // Returns true only for inputs that are plausibly an AI prompt box.
+  // Used in both the focusin handler and the active-element poll so the button
+  // never appears on search bars, login fields, comment boxes, etc.
+
+  function isPromptInput(el) {
+    if (!el) return false;
+
+    // Disqualify by input type
+    const type = (el.getAttribute?.('type') || '').toLowerCase();
+    if (['password', 'email', 'search', 'tel', 'url', 'number'].includes(type)) return false;
+
+    // Disqualify by ARIA role
+    const role = (el.getAttribute?.('role') || '').toLowerCase();
+    if (['search', 'searchbox'].includes(role)) return false;
+
+    // Disqualify if inside a search region, navigation, or banner/header landmark
+    if (el.closest('[role="search"]'))      return false;
+    if (el.closest('[role="navigation"]'))  return false;
+    if (el.closest('[role="banner"]'))      return false;
+    if (el.closest('nav'))                  return false;
+    if (el.closest('header'))              return false;
+
+    // Disqualify if placeholder/label strongly implies this is a search field
+    const hint = (
+      el.getAttribute('placeholder') ||
+      el.getAttribute('aria-label') ||
+      el.getAttribute('aria-placeholder') || ''
+    ).toLowerCase();
+    if (/^search[\s\W]|^find[\s\W]|^filter[\s\W]|search\.\.\.|find\.\.\./i.test(hint)) return false;
+
+    // Must be on-screen and have a plausible size
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 100 || rect.height < 20)      return false;
+    if (rect.top >= window.innerHeight || rect.bottom <= 0) return false;
+
+    return true;
   }
 
   // ─── Input read/write helpers ─────────────────────────────────────────────
@@ -741,11 +777,7 @@
         const isTextbox   = role === 'textbox';
 
         if (isEditable || isTextarea || isTextInput || isTextbox) {
-          const rect = el.getBoundingClientRect();
-          if (rect.width > 100 && rect.height >= 20) {
-            // Only show button for the detected prompt input — not search bars,
-            // login fields, comment boxes, or other non-prompt inputs on the page.
-            if (el !== findBestInput()) return;
+          if (isPromptInput(el)) {
             currentInput = el;
             showButton(el);
             attachDirectListeners(el);
@@ -827,9 +859,7 @@
       const isTextbox   = role === 'textbox';
 
       if (isEditable || isTextarea || isTextInput || isTextbox) {
-        const rect = ae.getBoundingClientRect();
-        if (rect.width > 100 && rect.height >= 20 && pcButton.style.display === 'none') {
-          if (ae !== findBestInput()) return;
+        if (isPromptInput(ae) && pcButton.style.display === 'none') {
           currentInput = ae;
           attachDirectListeners(ae);
           showButton(ae);
