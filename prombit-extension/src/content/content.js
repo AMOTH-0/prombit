@@ -743,6 +743,9 @@
         if (isEditable || isTextarea || isTextInput || isTextbox) {
           const rect = el.getBoundingClientRect();
           if (rect.width > 100 && rect.height >= 20) {
+            // Only show button for the detected prompt input — not search bars,
+            // login fields, comment boxes, or other non-prompt inputs on the page.
+            if (el !== findBestInput()) return;
             currentInput = el;
             showButton(el);
             attachDirectListeners(el);
@@ -826,6 +829,7 @@
       if (isEditable || isTextarea || isTextInput || isTextbox) {
         const rect = ae.getBoundingClientRect();
         if (rect.width > 100 && rect.height >= 20 && pcButton.style.display === 'none') {
+          if (ae !== findBestInput()) return;
           currentInput = ae;
           attachDirectListeners(ae);
           showButton(ae);
