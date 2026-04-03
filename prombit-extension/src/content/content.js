@@ -102,6 +102,7 @@
     { domain: 'playgroundai.com',         category: 'IMAGE',        label: 'Improve Image Prompt' },
     { domain: 'playground.ai',            category: 'IMAGE',        label: 'Improve Image Prompt' },
     { domain: 'firefly.adobe.com',        category: 'IMAGE',        label: 'Improve Image Prompt' },
+    { domain: 'express.adobe.com',       category: 'IMAGE',        label: 'Improve Image Prompt' },
     { domain: 'ideogram.ai',              category: 'IMAGE',        label: 'Improve Image Prompt' },
     { domain: 'bluewillow.ai',            category: 'IMAGE',        label: 'Improve Image Prompt' },
     { domain: 'dreamstudio.ai',           category: 'IMAGE',        label: 'Improve Image Prompt' },
@@ -149,6 +150,7 @@
     { domain: 'pixverse.ai',              category: 'VIDEO',        label: 'Improve Video Prompt' },
     { domain: 'seedance.ai',              category: 'VIDEO',        label: 'Improve Video Prompt' },
     { domain: 'vidu.ai',                  category: 'VIDEO',        label: 'Improve Video Prompt' },
+    { domain: 'hera.video',              category: 'VIDEO',        label: 'Improve Video Prompt' },
 
     // ── VOICE — AI Voice, TTS & Audio ───────────────────────────────────────
     { domain: 'elevenlabs.io',            category: 'VOICE',        label: 'Improve Voice Prompt' },
@@ -162,6 +164,7 @@
     { domain: 'lovo.ai',                  category: 'VOICE',        label: 'Improve Voice Prompt' },
     { domain: 'listnr.tech',              category: 'VOICE',        label: 'Improve Voice Prompt' },
     { domain: 'rimeai.com',               category: 'VOICE',        label: 'Improve Voice Prompt' },
+    { domain: 'podcast.adobe.com',       category: 'VOICE',        label: 'Improve Voice Prompt' },
 
     // ── MUSIC — AI Music Generation ──────────────────────────────────────────
     { domain: 'suno.com',                 category: 'MUSIC',        label: 'Improve Music Prompt' },
@@ -174,6 +177,7 @@
     { domain: 'beatoven.ai',              category: 'MUSIC',        label: 'Improve Music Prompt' },
     { domain: 'loudly.com',               category: 'MUSIC',        label: 'Improve Music Prompt' },
     { domain: 'boomy.com',                category: 'MUSIC',        label: 'Improve Music Prompt' },
+    { domain: 'thatawave.ai',            category: 'MUSIC',        label: 'Improve Music Prompt' },
 
     // ── WRITING — AI Writing & Content Tools ────────────────────────────────
     { domain: 'jasper.ai',                category: 'WRITING',      label: 'Improve Writing Prompt' },
@@ -212,6 +216,7 @@
     { domain: 'simplified.com',           category: 'DESIGN',       label: 'Improve Design Prompt' },
     { domain: 'galileo.ai',               category: 'DESIGN',       label: 'Improve Design Prompt' },
     { domain: 'magician.design',          category: 'DESIGN',       label: 'Improve Design Prompt' },
+    { domain: 'supademo.com',            category: 'DESIGN',       label: 'Improve Design Prompt' },
 
     // ── PRODUCTIVITY — AI Productivity & Office Tools ───────────────────────
     { domain: 'clickup.com',              category: 'PRODUCTIVITY', label: 'Improve Prompt' },
