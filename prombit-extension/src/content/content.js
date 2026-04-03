@@ -657,8 +657,10 @@
   async function triggerImprove() {
     if (isImproving) return;
 
-    currentInput = findBestInput();
-    const rawPrompt = getInputText(currentInput);
+    // Prefer the element the user was actually focused on (set by focus handlers).
+    // Only fall back to findBestInput() if currentInput was never set.
+    const input = currentInput || findBestInput();
+    const rawPrompt = getInputText(input);
 
     if (!rawPrompt || rawPrompt.length < 3) {
       showErrorOverlay('PROMPT_TOO_SHORT');
@@ -693,8 +695,8 @@
   }
 
   function applyImprovedPrompt(text) {
-    currentInput = findBestInput();
-    if (currentInput) { setInputText(currentInput, text); currentInput.focus(); }
+    const target = currentInput || findBestInput();
+    if (target) { setInputText(target, text); target.focus(); }
   }
 
   function setButtonLoading(loading) {
