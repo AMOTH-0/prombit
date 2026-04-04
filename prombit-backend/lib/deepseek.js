@@ -32,7 +32,7 @@ async function improvePrompt(rawPrompt, systemPrompt) {
         { role: 'system', content: systemPrompt },
         { role: 'user',   content: rawPrompt }
       ],
-      max_tokens:  200,   // drastically limits output length to prevent 5-10 second generation times
+      max_tokens:  1000,  // enough headroom for the longest proportional improvement (~750 words); never cuts a prompt mid-sentence
       temperature: 0.3,   // small positive value ensures each request is sampled independently, breaking DeepSeek's prefix-cache determinism that otherwise anchors outputs to the previous call's context
     }, { signal: controller.signal });
 

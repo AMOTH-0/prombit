@@ -16,7 +16,7 @@ const COST_IN_NANO_PER_TOKEN = 140;   // $0.14 per 1M tokens
 const COST_OUT_NANO_PER_TOKEN = 280;  // $0.28 per 1M tokens
 const MAX_BUDGET_NANO = 5_000_000_000; // $5.00 strict daily limit
 const MAX_MONTHLY_BUDGET_NANO = 25_000_000_000; // $25.00 strict monthly limit
-const MAX_RESERVATION_NANO = Math.ceil((1200 * COST_IN_NANO_PER_TOKEN) + (200 * COST_OUT_NANO_PER_TOKEN));
+const MAX_RESERVATION_NANO = Math.ceil((1200 * COST_IN_NANO_PER_TOKEN) + (1000 * COST_OUT_NANO_PER_TOKEN));
 
 // ─── Category-specific system prompts ─────────────────────────────────────
 const SYSTEM_PROMPT = `You are Prombit, an expert prompt engineer. Your job is to rewrite a user's raw prompt into a cleaner, more effective version that gets better results from AI.
