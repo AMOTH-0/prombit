@@ -50,6 +50,7 @@
     { domain: 'together.ai',              category: 'TEXT_CHAT',    label: 'Improve Prompt' },
     { domain: 'groq.com',                 category: 'TEXT_CHAT',    label: 'Improve Prompt' },
     { domain: 'cohere.com',               category: 'TEXT_CHAT',    label: 'Improve Prompt' },
+    { domain: 'manus.im',                 category: 'TEXT_CHAT',    label: 'Improve Prompt' },
 
     // ── SEARCH — AI Search & Research Tools ────────────────────────────────
     { domain: 'phind.com',                category: 'SEARCH',       label: 'Improve Search Prompt' },
