@@ -17,12 +17,30 @@ async function fetchProjectContext(promptText) {
   }
 }
 
+// ─── Map hostname → human-readable tool name ───────────────────────────────
+function toolFromSite(siteUrl) {
+  const h = (siteUrl || '').toLowerCase().replace(/^www\./, '');
+  if (h.includes('chatgpt.com'))                                      return 'ChatGPT';
+  if (h.includes('claude.ai'))                                        return 'Claude';
+  if (h.includes('gemini.google.com'))                                return 'Gemini';
+  if (h.includes('copilot.microsoft.com') || h.includes('copilot.github.com')) return 'Copilot';
+  if (h.includes('perplexity.ai'))                                    return 'Perplexity';
+  if (h.includes('cursor.sh'))                                        return 'Cursor';
+  if (h.includes('grok.com') || h.includes('x.ai'))                  return 'Grok';
+  if (h.includes('poe.com'))                                          return 'Poe';
+  if (h.includes('mistral.ai'))                                       return 'Mistral';
+  if (h.includes('cohere.com'))                                       return 'Cohere';
+  if (h.includes('aistudio.google.com'))                              return 'AI Studio';
+  if (h.length > 0)                                                   return h; // show the domain as fallback
+  return 'Browser';
+}
+
 // ─── Record prompt to local Prombit desktop app (fire-and-forget) ──────────
-function recordToDesktop(prompt, siteCategory) {
+function recordToDesktop(prompt, toolName) {
   fetch(`${DESKTOP_BASE}/prompt`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ text: prompt, tool: siteCategory || 'Browser' }),
+    body:    JSON.stringify({ text: prompt, tool: toolName }),
   }).catch(() => {});
 }
 
@@ -34,8 +52,8 @@ async function handleImprovePrompt(prompt, siteCategory = 'UNKNOWN_AI', siteUrl 
   if (_improving) throw new Error('ALREADY_IMPROVING');
   if (!prompt || prompt.trim().length < 3) throw new Error('PROMPT_TOO_SHORT');
 
-  // Record the original prompt (fire-and-forget)
-  recordToDesktop(prompt, siteCategory);
+  // Record the original prompt with the proper tool name (fire-and-forget)
+  recordToDesktop(prompt, toolFromSite(siteUrl));
 
   // Fetch project context from desktop in parallel with nothing — adds richness, never blocks
   const projectContext = await fetchProjectContext(prompt);
