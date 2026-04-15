@@ -120,7 +120,7 @@ module.exports = async (req, res) => {
     }
 
     // 5. Schema & Validation
-    const { prompt } = req.body || {};
+    const { prompt, projectContext } = req.body || {};
     let { siteCategory = 'UNKNOWN_AI', siteUrl = '' } = req.body || {};
 
     if (typeof siteCategory !== 'string' || siteCategory.length > 50) return fail(400, 'PAYLOAD_TOO_LARGE', 'validation_fail');
@@ -175,9 +175,18 @@ module.exports = async (req, res) => {
     }
 
     // 8. Build Prompt & Execute
-    const systemPrompt = siteUrl
-      ? `${SYSTEM_PROMPT}\n\nThis prompt is being written for: ${siteUrl}\nApply your knowledge of how prompts work best on this specific platform, including any platform-specific syntax, parameters, or conventions.`
-      : SYSTEM_PROMPT;
+    // Validate projectContext — must be a short string, never executable
+    const safeContext = (typeof projectContext === 'string' && projectContext.length > 0 && projectContext.length <= 2000)
+      ? projectContext.trim()
+      : null;
+
+    let systemPrompt = SYSTEM_PROMPT;
+    if (siteUrl) {
+      systemPrompt += `\n\nThis prompt is being written for: ${siteUrl}\nApply your knowledge of how prompts work best on this specific platform, including any platform-specific syntax, parameters, or conventions.`;
+    }
+    if (safeContext) {
+      systemPrompt += `\n\n---\nThe user has an active project with the following context. Use this to make the improved prompt more specific and relevant — but only inject details that logically fit what the user is asking. Never hallucinate beyond this context.\n\n${safeContext}\n---`;
+    }
 
     const result = await improvePrompt(trimmedPrompt, systemPrompt);
     
