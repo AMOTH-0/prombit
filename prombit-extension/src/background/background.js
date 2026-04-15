@@ -1,5 +1,17 @@
 // Prombit Background Service Worker
 
+const DESKTOP_API = 'http://127.0.0.1:27182/prompt';
+
+// ─── Record prompt to local Prombit desktop app ────────────────────────────
+// Fire-and-forget — fails silently if the desktop app isn't running.
+function recordToDesktop(prompt, siteCategory) {
+  fetch(DESKTOP_API, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ text: prompt, tool: siteCategory || 'Browser' }),
+  }).catch(() => {}); // desktop may not be running — ignore
+}
+
 // ─── Core handler ──────────────────────────────────────────────────────────
 
 let _improving = false; // in-flight dedup guard
@@ -7,6 +19,9 @@ let _improving = false; // in-flight dedup guard
 async function handleImprovePrompt(prompt, siteCategory = 'UNKNOWN_AI', siteUrl = '') {
   if (_improving) throw new Error('ALREADY_IMPROVING');
   if (!prompt || prompt.trim().length < 3) throw new Error('PROMPT_TOO_SHORT');
+
+  // Record the original prompt to the local desktop app before improving
+  recordToDesktop(prompt, siteCategory);
 
   _improving = true;
   try {
