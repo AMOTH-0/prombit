@@ -470,8 +470,8 @@
   }
 
   function injectButton() {
-    if (document.getElementById('promptcraft-btn') || !siteConfig) return;
-    pcButton = createButton(siteConfig.label);
+    if (document.getElementById('promptcraft-btn')) return;
+    pcButton = createButton(siteConfig?.label || 'Improve Prompt');
     // Start fully hidden — only show on input focus
     pcButton.style.display = 'none';
     pcButton.style.opacity = '0';
@@ -725,12 +725,8 @@
   // ─── Init & SPA navigation ────────────────────────────────────────────────
 
   function runDetection() {
-    siteConfig = getSiteConfig();
-    if (siteConfig) {
-      injectButton(); // injected hidden; focus listener will show it
-    } else {
-      removeButton();
-    }
+    siteConfig = getSiteConfig(); // null on unknown sites — label falls back to 'Improve Prompt'
+    injectButton(); // always inject; only appears when a prompt input is focused
   }
 
   function init() {
@@ -738,7 +734,7 @@
 
     // ── Auto-focus check: show button if input is already focused ──────
     function checkAutoFocus() {
-      if (!siteConfig || !pcButton) return;
+      if (!pcButton) return;
       const input = findBestInput();
       if (!input) return;
       if (document.activeElement === input || input.contains(document.activeElement)) {
@@ -854,7 +850,7 @@
     // Handles cases where a popup (emoji picker, autocomplete, browser dialog)
     // closes and focus returns to the input without reliably firing 'focus'.
     setInterval(() => {
-      if (!siteConfig || !pcButton) return;
+      if (!pcButton) return;
       const ae = document.activeElement;
       if (!ae || ae === document.body || ae === document.documentElement) return;
 
@@ -878,7 +874,7 @@
     // ── Keep button injected if SPA removes it from the DOM ────────────
     // pcButton.isConnected avoids a live DOM query on every mutation
     new MutationObserver(() => {
-      if (siteConfig && (!pcButton || !pcButton.isConnected)) {
+      if (!pcButton || !pcButton.isConnected) {
         injectButton();
         setTimeout(checkAutoFocus, 100);
       }
