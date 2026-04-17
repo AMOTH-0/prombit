@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Prombit",
-  "version": "1.0.1",
+  "name": "Prombit - improves your AI prompts with one click",
+  "version": "1.0.3",
   "description": "Automatically improves your AI prompts for better results.",
   "permissions": [
     "activeTab",
