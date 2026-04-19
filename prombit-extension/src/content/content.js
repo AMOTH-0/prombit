@@ -535,10 +535,14 @@
   function watchInputResize(inputEl) {
     if (!inputEl || !window.ResizeObserver) return;
     if (_resizeObserver) { _resizeObserver.disconnect(); }
+    let _rafPendingResize = false;
     _resizeObserver = new ResizeObserver(() => {
-      if (pcButton && pcButton.style.display !== 'none') {
-        positionButton(inputEl);
-      }
+      if (_rafPendingResize || !pcButton || pcButton.style.display === 'none') return;
+      _rafPendingResize = true;
+      requestAnimationFrame(() => {
+        _rafPendingResize = false;
+        if (pcButton && pcButton.style.display !== 'none') positionButton(inputEl);
+      });
     });
     _resizeObserver.observe(inputEl);
   }
@@ -829,11 +833,35 @@
       }
     }, 600);
 
-    // ── SPA: poll for URL changes ───────────────────────────────────────
+    // ── Unified poll: URL changes (every ~600ms) + active-element (every 300ms) ──
+    // Single timer instead of two — halves timer count per tab.
+    let _urlPollTick = 0;
     setInterval(() => {
-      if (location.href !== lastUrl) {
+      // Active-element poll — every 300ms
+      // Handles focus returning after emoji picker / autocomplete closes
+      if (pcButton && siteConfig) {
+        const ae = document.activeElement;
+        if (ae && ae !== document.body && ae !== document.documentElement) {
+          const tag  = ae.tagName || '';
+          const type = (ae.getAttribute?.('type') || '').toLowerCase();
+          const role = (ae.getAttribute?.('role') || '').toLowerCase();
+          if (
+            (ae.isContentEditable || tag === 'TEXTAREA' ||
+             (tag === 'INPUT' && ['text', 'search', ''].includes(type)) ||
+             role === 'textbox') &&
+            isPromptInput(ae) && pcButton.style.display === 'none'
+          ) {
+            currentInput = ae;
+            attachDirectListeners(ae);
+            showButton(ae);
+          }
+        }
+      }
+
+      // SPA: URL change poll — every other tick (~600ms)
+      if (++_urlPollTick % 2 === 0 && location.href !== lastUrl) {
         lastUrl = location.href;
-        invalidateInputCache(); // stale element ref — clear before re-detecting
+        invalidateInputCache();
         removeButton();
         setTimeout(() => {
           runDetection();
@@ -844,40 +872,21 @@
           }, 300);
         }, 800);
       }
-    }, 500);
-
-    // ── Active-element poll: show button whenever the input has focus ──
-    // Handles cases where a popup (emoji picker, autocomplete, browser dialog)
-    // closes and focus returns to the input without reliably firing 'focus'.
-    setInterval(() => {
-      if (!pcButton) return;
-      const ae = document.activeElement;
-      if (!ae || ae === document.body || ae === document.documentElement) return;
-
-      const tag  = ae.tagName || '';
-      const type = (ae.getAttribute?.('type') || '').toLowerCase();
-      const role = (ae.getAttribute?.('role') || '').toLowerCase();
-      const isEditable  = ae.isContentEditable;
-      const isTextarea  = tag === 'TEXTAREA';
-      const isTextInput = tag === 'INPUT' && ['text', 'search', ''].includes(type);
-      const isTextbox   = role === 'textbox';
-
-      if (isEditable || isTextarea || isTextInput || isTextbox) {
-        if (isPromptInput(ae) && pcButton.style.display === 'none') {
-          currentInput = ae;
-          attachDirectListeners(ae);
-          showButton(ae);
-        }
-      }
     }, 300);
 
     // ── Keep button injected if SPA removes it from the DOM ────────────
-    // pcButton.isConnected avoids a live DOM query on every mutation
+    // Debounced — SPA frameworks trigger many mutations per render cycle.
+    let _mutationPending = false;
     new MutationObserver(() => {
-      if (!pcButton || !pcButton.isConnected) {
-        injectButton();
-        setTimeout(checkAutoFocus, 100);
-      }
+      if (_mutationPending) return;
+      _mutationPending = true;
+      setTimeout(() => {
+        _mutationPending = false;
+        if (!pcButton || !pcButton.isConnected) {
+          injectButton();
+          setTimeout(checkAutoFocus, 100);
+        }
+      }, 200);
     }).observe(document.body, { childList: true, subtree: true });
   }
 
