@@ -643,7 +643,7 @@
         ${headerHtml()}
         <div class="pc-error">
           <div class="pc-error-icon">⚠️</div>
-          <p>${msgs[message] || message}</p>
+          <p>${msgs[message] || escapeHtml(String(message))}</p>
           <button class="pc-btn-secondary" id="pc-err-close">Dismiss</button>
         </div>
       </div>`;

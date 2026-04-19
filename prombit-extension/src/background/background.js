@@ -81,6 +81,18 @@ async function handleImprovePrompt(prompt, siteCategory = 'UNKNOWN_AI', siteUrl 
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'IMPROVE_PROMPT') {
+    if (typeof message.prompt !== 'string' || message.prompt.length > 5000) {
+      sendResponse({ success: false, error: 'INVALID_REQUEST' });
+      return true;
+    }
+    if (message.siteCategory !== undefined && typeof message.siteCategory !== 'string') {
+      sendResponse({ success: false, error: 'INVALID_REQUEST' });
+      return true;
+    }
+    if (message.siteUrl !== undefined && typeof message.siteUrl !== 'string') {
+      sendResponse({ success: false, error: 'INVALID_REQUEST' });
+      return true;
+    }
     handleImprovePrompt(message.prompt, message.siteCategory, message.siteUrl)
       .then(result => sendResponse({ success: true, improvedPrompt: result }))
       .catch(err  => sendResponse({ success: false, error: err.message }));

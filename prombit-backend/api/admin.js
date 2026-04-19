@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { Redis } = require('@upstash/redis');
 const { getDailyUsageReport } = require('../lib/reporting');
 
@@ -10,10 +11,19 @@ module.exports = async (req, res) => {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
   
-  const authHeader = req.headers.authorization || '';
   const expectedToken = process.env.ADMIN_TOKEN;
-  
-  if (!expectedToken || authHeader !== `Bearer ${expectedToken}`) {
+  if (!expectedToken) return res.status(500).json({ error: 'SERVER_MISCONFIGURED' });
+
+  const authHeader = req.headers.authorization || '';
+  const expectedHeader = `Bearer ${expectedToken}`;
+  let authorized = false;
+  try {
+    const a = Buffer.from(authHeader);
+    const b = Buffer.from(expectedHeader);
+    authorized = a.length === b.length && crypto.timingSafeEqual(a, b);
+  } catch { authorized = false; }
+
+  if (!authorized) {
     return res.status(401).json({ error: 'UNAUTHORIZED' });
   }
 

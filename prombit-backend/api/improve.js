@@ -65,7 +65,7 @@ async function checkRedisRateLimit(ip) {
       return false;
     }
     return true;
-  } catch (err) { return true; } // Fail gracefully
+  } catch (err) { return false; } // Fail closed — Redis down blocks requests rather than bypassing rate limiting
 }
 
 // ─── Main Handler ──────────────────────────────────────────────────────────
@@ -110,7 +110,8 @@ module.exports = async (req, res) => {
 
     // 3. Strict Origin Validation
     const origin = req.headers.origin || '';
-    if (!origin.startsWith('chrome-extension://') && !origin.includes('localhost')) {
+    const ALLOWED_ORIGIN = /^chrome-extension:\/\/[a-z]{32}$|^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+    if (!ALLOWED_ORIGIN.test(origin)) {
       return fail(403, 'FORBIDDEN_ORIGIN', 'blocked');
     }
 
@@ -125,6 +126,7 @@ module.exports = async (req, res) => {
 
     if (typeof siteCategory !== 'string' || siteCategory.length > 50) return fail(400, 'PAYLOAD_TOO_LARGE', 'validation_fail');
     if (typeof siteUrl !== 'string' || siteUrl.length > 500) return fail(400, 'PAYLOAD_TOO_LARGE', 'validation_fail');
+    if (siteUrl && !/^[a-zA-Z0-9][a-zA-Z0-9\-._]{0,252}$/.test(siteUrl)) return fail(400, 'INVALID_SITE_URL', 'validation_fail');
 
     if (!prompt || typeof prompt !== 'string') return fail(400, 'PROMPT_MISSING', 'validation_fail');
     
@@ -185,7 +187,11 @@ module.exports = async (req, res) => {
       systemPrompt += `\n\nThis prompt is being written for: ${siteUrl}\nApply your knowledge of how prompts work best on this specific platform, including any platform-specific syntax, parameters, or conventions.`;
     }
     if (safeContext) {
-      systemPrompt += `\n\n---\nThe user has an active project with the following context. Use this to make the improved prompt more specific and relevant — but only inject details that logically fit what the user is asking. Never hallucinate beyond this context.\n\n${safeContext}\n---`;
+      // Strip prompt-injection delimiters and obvious override attempts from user-supplied context
+      const sanitizedContext = safeContext
+        .replace(/---/g, '~~~')
+        .replace(/^\s*(ignore|disregard|override|forget|system prompt|you are)/gim, '[$1]');
+      systemPrompt += `\n\n---\nThe user has an active project with the following context. Use this to make the improved prompt more specific and relevant — but only inject details that logically fit what the user is asking. Never hallucinate beyond this context.\n\n${sanitizedContext}\n---`;
     }
 
     const result = await improvePrompt(trimmedPrompt, systemPrompt);

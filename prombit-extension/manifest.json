@@ -35,6 +35,12 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "externally_connectable": {
+    "matches": []
+  },
   "commands": {
     "improve-prompt": {
       "suggested_key": {
