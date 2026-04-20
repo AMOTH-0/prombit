@@ -69,8 +69,18 @@ async function handleImprovePrompt(prompt, siteCategory = 'UNKNOWN_AI', siteUrl 
       body:    JSON.stringify(body),
     });
 
-    const data = await response.json();
-    if (!data.success) throw new Error(data.error);
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `Server error (${response.status})`);
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error('Invalid response from server');
+    }
+    if (!data.success) throw new Error(data.error || 'Improvement failed');
     return data.improvedPrompt;
   } finally {
     _improving = false;
