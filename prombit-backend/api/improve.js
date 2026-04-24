@@ -110,8 +110,9 @@ module.exports = async (req, res) => {
 
     // 3. Strict Origin Validation
     const origin = req.headers.origin || '';
+    const isDesktop = req.headers['x-prombit-source'] === 'desktop';
     const ALLOWED_ORIGIN = /^chrome-extension:\/\/[a-z]{32}$|^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
-    if (!ALLOWED_ORIGIN.test(origin)) {
+    if (!isDesktop && !ALLOWED_ORIGIN.test(origin)) {
       return fail(403, 'FORBIDDEN_ORIGIN', 'blocked');
     }
 
